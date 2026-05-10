@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   IconHistory,
@@ -37,7 +37,15 @@ import { SidebarProjectsSection } from "./SidebarProjectsSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarSearchResults } from "./SidebarSearchResults";
 import { ServersDialog } from "./ServersDialog";
-import { getActiveBackendServerName } from "@/shared/api/backendConfig";
+import {
+  getActiveBackendServerName,
+  getBackendServers,
+} from "@/shared/api/backendConfig";
+import { checkBackendServerConnection } from "@/shared/api/backendConnection";
+import {
+  ServerStatusDot,
+  type ServerConnectionStatus,
+} from "./ServerStatusDot";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -96,6 +104,7 @@ export function Sidebar({
   const [expanded, setExpanded] = useState(!collapsed);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const prevCollapsed = useRef(collapsed);
+  const activeServerProbeRef = useRef(0);
   const [expandedProjects, setExpandedProjects] = useState<
     Record<string, boolean>
   >(() => {
@@ -115,6 +124,8 @@ export function Sidebar({
   const [activeServerName, setActiveServerName] = useState<string | null>(() =>
     getActiveBackendServerName(),
   );
+  const [activeServerStatus, setActiveServerStatus] =
+    useState<ServerConnectionStatus>("checking");
   const sessionStateById = useChatStore(selectSessionStateById);
   const sessions = useChatSessionStore(selectSessions);
   const getPersonaById = useAgentStore((s) => s.getPersonaById);
@@ -260,12 +271,40 @@ export function Sidebar({
     });
   }, [projects]);
 
-  useEffect(() => {
-    if (!serversDialogOpen) {
+  const refreshActiveServerStatus = useCallback(async () => {
+    const probeId = ++activeServerProbeRef.current;
+    const nextActiveServerName = getActiveBackendServerName();
+    setActiveServerName(nextActiveServerName);
+    if (!nextActiveServerName) {
+      setActiveServerStatus("disconnected");
       return;
     }
-    setActiveServerName(getActiveBackendServerName());
-  }, [serversDialogOpen]);
+
+    const servers = getBackendServers();
+    const activeServerUrl = servers[nextActiveServerName];
+    if (!activeServerUrl) {
+      setActiveServerStatus("disconnected");
+      return;
+    }
+
+    setActiveServerStatus("checking");
+    const connected = await checkBackendServerConnection(activeServerUrl);
+    if (probeId !== activeServerProbeRef.current) {
+      return;
+    }
+    setActiveServerStatus(connected ? "connected" : "disconnected");
+  }, []);
+
+  useEffect(() => {
+    void refreshActiveServerStatus();
+    const intervalId = window.setInterval(() => {
+      void refreshActiveServerStatus();
+    }, 5_000);
+    return () => {
+      activeServerProbeRef.current += 1;
+      window.clearInterval(intervalId);
+    };
+  }, [refreshActiveServerStatus]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -309,17 +348,18 @@ export function Sidebar({
               className={cn(
                 "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
                 "hover:bg-background-alt",
-                collapsed && "w-8 justify-center px-0",
+                collapsed ? "w-8 justify-center px-0" : "flex-1",
               )}
               title={activeServerName ?? t("servers.none")}
               aria-label={t("servers.open")}
             >
               <GooseIcon className="text-foreground" />
               {!collapsed && (
-                <span className="truncate text-xs text-foreground">
+                <span className="min-w-0 flex-1 truncate text-xs text-foreground">
                   {activeServerName ?? t("servers.none")}
                 </span>
               )}
+              <ServerStatusDot status={activeServerStatus} />
             </button>
             {!collapsed && (
               <Button
@@ -531,9 +571,7 @@ export function Sidebar({
         open={serversDialogOpen}
         onOpenChange={(open) => {
           setServersDialogOpen(open);
-          if (!open) {
-            setActiveServerName(getActiveBackendServerName());
-          }
+          void refreshActiveServerStatus();
         }}
       />
     </div>

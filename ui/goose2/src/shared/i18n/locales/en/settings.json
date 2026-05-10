@@ -19,7 +19,7 @@
     "title": "Backend",
     "description": "Connect Goose2 to a custom goose backend endpoint.",
     "urlLabel": "Backend URL",
-    "urlPlaceholder": "ws://localhost:3000/acp",
+    "urlPlaceholder": "127.0.0.1:3284",
     "test": "Test connection",
     "saved": "Backend URL saved.",
     "cleared": "Custom backend URL cleared.",

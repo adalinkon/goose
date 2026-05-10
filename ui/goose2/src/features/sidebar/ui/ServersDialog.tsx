@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   IconArrowLeft,
@@ -22,12 +22,18 @@ import {
   getBackendServerAuth,
   getBackendServers,
   removeBackendServer,
+  resolveBackendServerUrl,
   setActiveBackendServerName,
   setBackendServer,
   setBackendServerAuth,
   type BackendServerAuth,
 } from "@/shared/api/backendConfig";
 import { cn } from "@/shared/lib/cn";
+import { checkBackendServerConnection } from "@/shared/api/backendConnection";
+import {
+  ServerStatusDot,
+  type ServerConnectionStatus,
+} from "./ServerStatusDot";
 
 interface ServerItem {
   name: string;
@@ -65,6 +71,10 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
     () => getActiveBackendServerName(),
   );
   const [servers, setServers] = useState<ServerItem[]>(() => readServerItems());
+  const [serverStatuses, setServerStatuses] = useState<
+    Record<string, ServerConnectionStatus>
+  >({});
+  const statusProbeRef = useRef(0);
 
   const filteredServers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -85,17 +95,55 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
 
   function deriveServerName(url: string): string {
     try {
-      const parsed = new URL(url);
-      return parsed.hostname || url;
+      const resolvedUrl = resolveBackendServerUrl(url) ?? `ws://${url}`;
+      const parsed = new URL(resolvedUrl);
+      return parsed.host || url;
     } catch {
       return url;
     }
   }
 
-  const refreshServers = useCallback(() => {
-    setServers(readServerItems());
-    setActiveServerNameState(getActiveBackendServerName());
+  const refreshStatuses = useCallback(async (items: ServerItem[]) => {
+    const probeId = ++statusProbeRef.current;
+    if (items.length === 0) {
+      setServerStatuses({});
+      return;
+    }
+
+    setServerStatuses((previous) => {
+      const next: Record<string, ServerConnectionStatus> = {};
+      for (const item of items) {
+        next[item.name] = previous[item.name] ?? "checking";
+      }
+      return next;
+    });
+
+    const probed = await Promise.all(
+      items.map(async (item) => ({
+        name: item.name,
+        status: (await checkBackendServerConnection(item.url))
+          ? "connected"
+          : "disconnected",
+      })),
+    );
+
+    if (probeId !== statusProbeRef.current) {
+      return;
+    }
+
+    setServerStatuses(
+      Object.fromEntries(
+        probed.map((item) => [item.name, item.status]),
+      ) as Record<string, ServerConnectionStatus>,
+    );
   }, []);
+
+  const refreshServers = useCallback(() => {
+    const nextServers = readServerItems();
+    setServers(nextServers);
+    setActiveServerNameState(getActiveBackendServerName());
+    void refreshStatuses(nextServers);
+  }, [refreshStatuses]);
 
   function handleSelectServer(name: string) {
     setActiveBackendServerName(name);
@@ -136,6 +184,13 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
     }
     setView("list");
     refreshServers();
+    const intervalId = window.setInterval(() => {
+      refreshServers();
+    }, 5_000);
+    return () => {
+      statusProbeRef.current += 1;
+      window.clearInterval(intervalId);
+    };
   }, [open, refreshServers]);
 
   return (
@@ -200,6 +255,7 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
                 ) : (
                   filteredServers.map((server) => {
                     const isActive = server.name === activeServerName;
+                    const status = serverStatuses[server.name] ?? "checking";
                     return (
                       <div
                         key={server.name}
@@ -210,12 +266,7 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
                             : "border-transparent bg-background hover:border-border",
                         )}
                       >
-                        <span
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            isActive ? "bg-success" : "bg-border",
-                          )}
-                        />
+                        <ServerStatusDot status={status} />
                         <button
                           type="button"
                           onClick={() => handleSelectServer(server.name)}

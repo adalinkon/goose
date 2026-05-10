@@ -37,7 +37,7 @@
     "usernameOptional": "Username (optional)",
     "tokenOptional": "Token (optional)",
     "namePlaceholder": "server_name",
-    "urlPlaceholder": "http://localhost:4096",
+    "urlPlaceholder": "127.0.0.1:3284",
     "usernamePlaceholder": "username",
     "tokenPlaceholder": "token",
     "noUsername": "no username"

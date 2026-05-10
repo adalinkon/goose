@@ -155,4 +155,12 @@ describe("custom provider API", () => {
       providerId: "acme_ai",
     });
   });
+
+  it("maps ACP method-not-found errors to a backend compatibility message", async () => {
+    mocks.catalogList.mockRejectedValue(new Error("Method not found"));
+
+    await expect(listCustomProviderCatalog()).rejects.toThrow(
+      "Backend does not support custom provider APIs. Update goose backend and reconnect.",
+    );
+  });
 });

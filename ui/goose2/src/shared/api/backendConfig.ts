@@ -16,6 +16,49 @@ function normalizeServerUrl(url: string): string {
   return url.trim();
 }
 
+function withAcpPath(url: URL): URL {
+  if (!url.pathname || url.pathname === "/") {
+    url.pathname = "/acp";
+  }
+  return url;
+}
+
+export function resolveBackendServerUrl(url: string): string | null {
+  const normalized = normalizeServerUrl(url);
+  if (!normalized) {
+    return null;
+  }
+
+  const hasExplicitScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(normalized);
+  let parsed: URL;
+
+  if (hasExplicitScheme) {
+    try {
+      parsed = new URL(normalized);
+    } catch {
+      return null;
+    }
+    if (parsed.protocol === "http:") {
+      parsed.protocol = "ws:";
+    } else if (parsed.protocol === "https:") {
+      parsed.protocol = "wss:";
+    } else if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+      return null;
+    }
+  } else {
+    try {
+      const hostPortOrPath = normalized.startsWith("//")
+        ? normalized.slice(2)
+        : normalized;
+      parsed = new URL(`ws://${hostPortOrPath}`);
+    } catch {
+      return null;
+    }
+  }
+
+  return withAcpPath(parsed).toString();
+}
+
 function readServersRaw(): BackendServers {
   try {
     const raw = localStorage.getItem(BACKEND_SERVERS_STORAGE_KEY);
@@ -98,11 +141,14 @@ export function getBackendServers(): BackendServers {
 
 export function getActiveBackendServerName(): string | null {
   const active = localStorage.getItem(BACKEND_ACTIVE_SERVER_STORAGE_KEY);
-  if (!active) {
-    return null;
+  const normalized = active ? normalizeServerName(active) : "";
+  if (normalized) {
+    return normalized;
   }
-  const normalized = normalizeServerName(active);
-  return normalized || null;
+
+  const servers = readServersRaw();
+  const firstServerName = Object.keys(servers)[0];
+  return firstServerName || null;
 }
 
 export function setActiveBackendServerName(serverName: string): void {
@@ -153,7 +199,7 @@ export function getActiveBackendServerUrl(): string | null {
   const servers = readServersRaw();
   const activeName = getActiveBackendServerName();
   if (activeName && servers[activeName]) {
-    return servers[activeName];
+    return resolveBackendServerUrl(servers[activeName]);
   }
   return null;
 }
@@ -200,7 +246,12 @@ export function removeBackendServerAuth(serverName: string): void {
 
 // Temporary compatibility for existing settings UI.
 export function getStoredBackendUrl(): string | null {
-  return getActiveBackendServerUrl();
+  const servers = readServersRaw();
+  const activeName = getActiveBackendServerName();
+  if (activeName && servers[activeName]) {
+    return servers[activeName];
+  }
+  return null;
 }
 
 export function setStoredBackendUrl(url: string): void {
