@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { invoke } from "@tauri-apps/api/core";
 import { exportPersona, importPersonas, refreshPersonas } from "../agents";
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
+const mockExtMethod = vi.fn();
 
-const mockedInvoke = vi.mocked(invoke);
+vi.mock("../acpConnection", () => ({
+  getClient: vi.fn(async () => ({
+    extMethod: mockExtMethod,
+  })),
+}));
 
 describe("agents API", () => {
   beforeEach(() => {
@@ -20,11 +21,11 @@ describe("agents API", () => {
       json: '{"displayName":"Test"}',
       suggestedFilename: "test.json",
     };
-    mockedInvoke.mockResolvedValue(mockResult);
+    mockExtMethod.mockResolvedValue(mockResult);
 
     const result = await exportPersona("persona-123");
 
-    expect(mockedInvoke).toHaveBeenCalledWith("export_persona", {
+    expect(mockExtMethod).toHaveBeenCalledWith("_goose/personas/export", {
       id: "persona-123",
     });
     expect(result).toEqual(mockResult);
@@ -43,12 +44,12 @@ describe("agents API", () => {
         updatedAt: "2026-01-01T00:00:00Z",
       },
     ];
-    mockedInvoke.mockResolvedValue(mockPersonas);
+    mockExtMethod.mockResolvedValue({ personas: mockPersonas });
 
     const fileBytes = [0x7b, 0x7d]; // "{}"
     const result = await importPersonas(fileBytes, "personas.json");
 
-    expect(mockedInvoke).toHaveBeenCalledWith("import_personas", {
+    expect(mockExtMethod).toHaveBeenCalledWith("_goose/personas/import", {
       fileBytes,
       fileName: "personas.json",
     });
@@ -68,11 +69,11 @@ describe("agents API", () => {
         updatedAt: "2026-01-01T00:00:00Z",
       },
     ];
-    mockedInvoke.mockResolvedValue(mockPersonas);
+    mockExtMethod.mockResolvedValue({ personas: mockPersonas });
 
     const result = await refreshPersonas();
 
-    expect(mockedInvoke).toHaveBeenCalledWith("refresh_personas");
+    expect(mockExtMethod).toHaveBeenCalledWith("_goose/personas/refresh", {});
     expect(result).toEqual(mockPersonas);
   });
 });

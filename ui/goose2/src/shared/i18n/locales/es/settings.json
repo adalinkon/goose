@@ -15,6 +15,17 @@
     "unavailable": "No disponible",
     "title": "Acerca de"
   },
+  "backend": {
+    "title": "Backend",
+    "description": "Conecta Goose2 a un endpoint backend de goose personalizado.",
+    "urlLabel": "URL del backend",
+    "urlPlaceholder": "ws://localhost:3000/acp",
+    "test": "Probar conexión",
+    "saved": "URL del backend guardada.",
+    "cleared": "URL de backend personalizada eliminada.",
+    "connected": "Conectado al backend.",
+    "connectFailed": "No se pudo conectar al backend."
+  },
   "appearance": {
     "accent": {
       "colors": {

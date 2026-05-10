@@ -1,28 +1,15 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { getAvatarsDir } from "@/shared/api/agents";
 import type { Avatar } from "@/shared/types/agents";
-
-let cachedAvatarsDir: string | null = null;
-
-async function ensureAvatarsDir(): Promise<string> {
-  if (!cachedAvatarsDir) {
-    cachedAvatarsDir = await getAvatarsDir();
-  }
-  return cachedAvatarsDir;
-}
 
 /**
  * Resolve an Avatar to a displayable image URL.
- * Lazily fetches the avatars directory on first call for a local avatar.
+ * In pure-frontend mode, local avatars are expected to be returned as
+ * backend-resolvable URLs from ACP APIs.
  */
 export async function resolveAvatarSrc(
   avatar: Avatar | null | undefined,
 ): Promise<string | undefined> {
   if (!avatar) return undefined;
   if (avatar.type === "url") return avatar.value;
-  if (avatar.type === "local") {
-    const dir = await ensureAvatarsDir();
-    return convertFileSrc(`${dir}/${avatar.value}`);
-  }
+  if (avatar.type === "local") return avatar.value;
   return undefined;
 }

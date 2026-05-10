@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { getClient } from "@/shared/api/acpConnection";
 
 export interface ProjectInfo {
@@ -124,11 +123,23 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 export async function scanProjectIcons(
   workingDirs: string[],
 ): Promise<ProjectIconCandidate[]> {
-  return invoke("scan_project_icons", { workingDirs });
+  try {
+    const client = await getClient();
+    const response = await client.extMethod("_goose/projects/scan_icons", {
+      workingDirs,
+    });
+    return (response.candidates ?? []) as ProjectIconCandidate[];
+  } catch {
+    return [];
+  }
 }
 
 export async function readProjectIcon(path: string): Promise<ProjectIconData> {
-  return invoke("read_project_icon", { path });
+  const client = await getClient();
+  const response = await client.extMethod("_goose/projects/read_icon", {
+    path,
+  });
+  return response as unknown as ProjectIconData;
 }
 
 export async function createProject(

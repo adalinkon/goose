@@ -22,6 +22,26 @@
     "placeholder": "Buscar chats...",
     "searching": "Buscando chats..."
   },
+  "servers": {
+    "title": "Servidores",
+    "open": "Abrir servidores",
+    "close": "Cerrar servidores",
+    "back": "Volver",
+    "none": "Sin servidor",
+    "empty": "No se encontraron servidores.",
+    "remove": "Eliminar servidor",
+    "searchPlaceholder": "Buscar servidores",
+    "addServer": "Agregar servidor",
+    "serverAddress": "Dirección del servidor",
+    "serverNameOptional": "Nombre del servidor (opcional)",
+    "usernameOptional": "Usuario (opcional)",
+    "tokenOptional": "Token (opcional)",
+    "namePlaceholder": "nombre_servidor",
+    "urlPlaceholder": "http://localhost:4096",
+    "usernamePlaceholder": "usuario",
+    "tokenPlaceholder": "token",
+    "noUsername": "sin usuario"
+  },
   "sections": {
     "projects": "Proyectos",
     "recents": "Chats"

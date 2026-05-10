@@ -1,36 +1,43 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getClient } from "@/shared/api/acpConnection";
 
-interface AgentSetupOutput {
-  providerId: string;
-  line: string;
-}
+type UnlistenFn = () => void;
 
 export async function checkAgentInstalled(
   providerId: string,
 ): Promise<boolean> {
-  return invoke("check_agent_installed", { providerId });
+  const client = await getClient();
+  const response = await client.extMethod(
+    "_goose/providers/agent/check_installed",
+    {
+      providerId,
+    },
+  );
+  return response.installed === true;
 }
 
 export async function checkAgentAuth(providerId: string): Promise<boolean> {
-  return invoke("check_agent_auth", { providerId });
+  const client = await getClient();
+  const response = await client.extMethod("_goose/providers/agent/check_auth", {
+    providerId,
+  });
+  return response.authenticated === true;
 }
 
 export async function installAgent(providerId: string): Promise<void> {
-  return invoke("install_agent", { providerId });
+  const client = await getClient();
+  await client.extMethod("_goose/providers/agent/install", { providerId });
 }
 
 export async function authenticateAgent(providerId: string): Promise<void> {
-  return invoke("authenticate_agent", { providerId });
+  const client = await getClient();
+  await client.extMethod("_goose/providers/agent/authenticate", { providerId });
 }
 
-export function onAgentSetupOutput(
+export async function onAgentSetupOutput(
   providerId: string,
   callback: (line: string) => void,
 ): Promise<UnlistenFn> {
-  return listen<AgentSetupOutput>("agent-setup:output", (event) => {
-    if (event.payload.providerId === providerId) {
-      callback(event.payload.line);
-    }
-  });
+  void providerId;
+  void callback;
+  return () => {};
 }

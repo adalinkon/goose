@@ -4,8 +4,7 @@ import { Camera, X } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
-import { savePersonaAvatar, savePersonaAvatarBytes } from "@/shared/api/agents";
-import { open } from "@tauri-apps/plugin-dialog";
+import { savePersonaAvatarBytes } from "@/shared/api/agents";
 import type { Avatar } from "@/shared/types/agents";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
@@ -28,6 +27,7 @@ export function AvatarDropZone({
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dragDepthRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const avatarSrc = useAvatarSrc(avatar);
 
@@ -47,32 +47,6 @@ export function AvatarDropZone({
         const buffer = await file.arrayBuffer();
         const bytes = Array.from(new Uint8Array(buffer));
         const filename = await savePersonaAvatarBytes(personaId, bytes, ext);
-
-        onChange({ type: "local", value: filename });
-      } catch (err) {
-        console.error("Failed to save avatar:", err);
-        setError(t("avatar.saveFailed"));
-      } finally {
-        setIsUploading(false);
-      }
-    },
-    [personaId, onChange, t],
-  );
-
-  /** Save a file selected via the native file picker (has a path). */
-  const processPath = useCallback(
-    async (filePath: string) => {
-      setError(null);
-
-      const ext = filePath.split(".").pop()?.toLowerCase();
-      if (!ext || !IMAGE_EXTENSIONS.includes(ext)) {
-        setError(t("avatar.unsupportedType"));
-        return;
-      }
-
-      setIsUploading(true);
-      try {
-        const filename = await savePersonaAvatar(personaId, filePath);
 
         onChange({ type: "local", value: filename });
       } catch (err) {
@@ -147,24 +121,22 @@ export function AvatarDropZone({
     [disabled, processFile, onChange],
   );
 
-  const handleClick = useCallback(async () => {
+  const handleClick = useCallback(() => {
     if (disabled || isUploading) return;
+    fileInputRef.current?.click();
+  }, [disabled, isUploading]);
 
-    const selected = await open({
-      title: t("avatar.chooseDialogTitle"),
-      filters: [
-        {
-          name: t("avatar.dialogFilterName"),
-          extensions: IMAGE_EXTENSIONS,
-        },
-      ],
-      multiple: false,
-    });
-
-    if (selected) {
-      processPath(selected);
-    }
-  }, [disabled, isUploading, processPath, t]);
+  const handleFileInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+      void processFile(file);
+      event.target.value = "";
+    },
+    [processFile],
+  );
 
   const handleClear = useCallback(
     (e: React.MouseEvent) => {
@@ -211,6 +183,13 @@ export function AvatarDropZone({
             </div>
           )}
         </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={IMAGE_EXTENSIONS.map((ext) => `.${ext}`).join(",")}
+          className="hidden"
+          onChange={handleFileInputChange}
+        />
 
         {/* Clear button */}
         {avatar && !disabled && (

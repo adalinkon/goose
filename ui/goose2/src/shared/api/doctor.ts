@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { getClient } from "./acpConnection";
 
 export type FixType = "command" | "bridge";
 
@@ -20,12 +20,19 @@ export interface DoctorReport {
 }
 
 export async function runDoctor(): Promise<DoctorReport> {
-  return invoke("run_doctor");
+  try {
+    const client = await getClient();
+    const response = await client.extMethod("_goose/doctor/run", {});
+    return response as unknown as DoctorReport;
+  } catch {
+    return { checks: [] };
+  }
 }
 
 export async function runDoctorFix(
   checkId: string,
   fixType: FixType,
 ): Promise<void> {
-  return invoke("run_doctor_fix", { checkId, fixType });
+  const client = await getClient();
+  await client.extMethod("_goose/doctor/fix", { checkId, fixType });
 }

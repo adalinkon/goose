@@ -36,6 +36,8 @@ import { useSessionSearch } from "@/features/sessions/hooks/useSessionSearch";
 import { SidebarProjectsSection } from "./SidebarProjectsSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarSearchResults } from "./SidebarSearchResults";
+import { ServersDialog } from "./ServersDialog";
+import { getActiveBackendServerName } from "@/shared/api/backendConfig";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -109,6 +111,10 @@ export function Sidebar({
   });
 
   const messagesBySession = useChatStore(selectMessagesBySession);
+  const [serversDialogOpen, setServersDialogOpen] = useState(false);
+  const [activeServerName, setActiveServerName] = useState<string | null>(() =>
+    getActiveBackendServerName(),
+  );
   const sessionStateById = useChatStore(selectSessionStateById);
   const sessions = useChatSessionStore(selectSessions);
   const getPersonaById = useAgentStore((s) => s.getPersonaById);
@@ -255,6 +261,13 @@ export function Sidebar({
   }, [projects]);
 
   useEffect(() => {
+    if (!serversDialogOpen) {
+      return;
+    }
+    setActiveServerName(getActiveBackendServerName());
+  }, [serversDialogOpen]);
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "k" && e.metaKey) {
         e.preventDefault();
@@ -286,11 +299,28 @@ export function Sidebar({
         >
           <div
             className={cn(
-              "flex items-center",
+              "flex items-center gap-2",
               collapsed ? "justify-center" : "justify-between",
             )}
           >
-            <GooseIcon className="text-foreground" />
+            <button
+              type="button"
+              onClick={() => setServersDialogOpen(true)}
+              className={cn(
+                "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                "hover:bg-background-alt",
+                collapsed && "w-8 justify-center px-0",
+              )}
+              title={activeServerName ?? t("servers.none")}
+              aria-label={t("servers.open")}
+            >
+              <GooseIcon className="text-foreground" />
+              {!collapsed && (
+                <span className="truncate text-xs text-foreground">
+                  {activeServerName ?? t("servers.none")}
+                </span>
+              )}
+            </button>
             {!collapsed && (
               <Button
                 type="button"
@@ -497,6 +527,15 @@ export function Sidebar({
           </div>
         </div>
       </div>
+      <ServersDialog
+        open={serversDialogOpen}
+        onOpenChange={(open) => {
+          setServersDialogOpen(open);
+          if (!open) {
+            setActiveServerName(getActiveBackendServerName());
+          }
+        }}
+      />
     </div>
   );
 }

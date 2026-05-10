@@ -1,6 +1,5 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { SearchBar } from "@/shared/ui/SearchBar";
@@ -22,11 +21,7 @@ import {
 } from "@/features/agents/stores/agentSelectors";
 import { PersonaGallery } from "@/features/agents/ui/PersonaGallery";
 import { PersonaEditor } from "@/features/agents/ui/PersonaEditor";
-import {
-  exportPersona,
-  importPersonas,
-  readImportPersonaFile,
-} from "@/shared/api/agents";
+import { exportPersona, importPersonas } from "@/shared/api/agents";
 import { usePersonas } from "@/features/agents/hooks/usePersonas";
 import type {
   Persona,
@@ -44,6 +39,7 @@ export function AgentsView() {
   const { t } = useTranslation(["agents", "common"]);
   const [search, setSearch] = useState("");
   const [deletingPersona, setDeletingPersona] = useState<Persona | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const personas = useAgentStore(selectPersonas);
   const personasLoading = useAgentStore(selectPersonasLoading);
@@ -188,39 +184,38 @@ export function AgentsView() {
   );
 
   const handleImportPicker = useCallback(async () => {
-    try {
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        title: t("common:actions.import"),
-        filters: [
-          {
-            name: "JSON",
-            extensions: ["json"],
-          },
-        ],
-      });
+    importInputRef.current?.click();
+  }, []);
 
-      if (!selected || Array.isArray(selected)) {
+  const handleImportInputChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
         return;
       }
 
-      const { fileBytes, fileName } = await readImportPersonaFile(selected);
       const validationMessage = validateImportFile({
-        name: fileName,
-        type: "",
+        name: file.name,
+        type: file.type,
       });
-
       if (validationMessage) {
         toast.error(validationMessage);
+        event.target.value = "";
         return;
       }
 
-      await handleImportFileBytes(fileBytes, fileName);
-    } catch (err) {
-      toast.error(formatAgentError(err, t("view.importFailed")));
-    }
-  }, [handleImportFileBytes, t, validateImportFile]);
+      try {
+        const buffer = await file.arrayBuffer();
+        const fileBytes = Array.from(new Uint8Array(buffer));
+        await handleImportFileBytes(fileBytes, file.name);
+      } catch (err) {
+        toast.error(formatAgentError(err, t("view.importFailed")));
+      } finally {
+        event.target.value = "";
+      }
+    },
+    [handleImportFileBytes, t, validateImportFile],
+  );
 
   return (
     <div className="flex flex-1 flex-col h-full min-h-0">
@@ -237,6 +232,13 @@ export function AgentsView() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={handleImportInputChange}
+              />
               <Button
                 type="button"
                 variant="outline-flat"

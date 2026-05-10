@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { getClient } from "./acpConnection";
 
 export interface ResolvePathParams {
   parts: string[];
@@ -11,7 +11,14 @@ export interface ResolvedPath {
 export async function resolvePath({
   parts,
 }: ResolvePathParams): Promise<ResolvedPath> {
-  return invoke("resolve_path", {
-    request: { parts },
-  });
+  try {
+    const client = await getClient();
+    const response = await client.extMethod("_goose/system/resolve_path", {
+      request: { parts },
+    });
+    return response as unknown as ResolvedPath;
+  } catch {
+    const normalized = parts.map((part) => part.trim()).filter(Boolean);
+    return { path: normalized.join("/") };
+  }
 }

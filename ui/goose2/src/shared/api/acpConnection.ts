@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import {
   DEFAULT_GOOSE_MCP_HOST_CAPABILITIES,
   GooseClient,
@@ -14,6 +13,7 @@ import {
 import packageJson from "../../../package.json";
 import { createWebSocketStream } from "./createWebSocketStream";
 import { perfLog } from "@/shared/lib/perfLog";
+import { getActiveBackendServerUrl } from "./backendConfig";
 
 let notificationHandler: AcpNotificationHandler | null = null;
 
@@ -27,6 +27,19 @@ export function setNotificationHandler(handler: AcpNotificationHandler): void {
 
 let clientPromise: Promise<GooseClient> | null = null;
 let resolvedClient: GooseClient | null = null;
+let resolvedClientUrl: string | null = null;
+
+type AcpBootstrapState =
+  | { state: "ready"; url: string }
+  | { state: "missing_url" }
+  | { state: "invalid_url"; url: string };
+
+let lastBootstrapStatus:
+  | { state: "idle" }
+  | { state: "missing_url" }
+  | { state: "invalid_url"; url: string }
+  | { state: "connect_failed"; url: string; message: string }
+  | { state: "connected"; url: string } = { state: "idle" };
 
 function createClientCallbacks(): () => Client {
   return () => ({
@@ -70,10 +83,19 @@ function monitorConnection(client: GooseClient): void {
 
 async function initializeConnection(): Promise<GooseClient> {
   const tStart = performance.now();
-  const wsUrl: string = await invoke("get_goose_serve_url");
-  perfLog(
-    `[perf:conn] get_goose_serve_url in ${(performance.now() - tStart).toFixed(1)}ms`,
-  );
+  const bootstrapState = resolveBootstrapState();
+  if (bootstrapState.state !== "ready") {
+    if (bootstrapState.state === "missing_url") {
+      lastBootstrapStatus = { state: "missing_url" };
+      throw new Error("No backend URL configured");
+    }
+    lastBootstrapStatus = {
+      state: "invalid_url",
+      url: bootstrapState.url,
+    };
+    throw new Error(`Invalid backend URL: ${bootstrapState.url}`);
+  }
+  const wsUrl = bootstrapState.url;
 
   const tStream = performance.now();
   const stream = createWebSocketStream(wsUrl);
@@ -103,11 +125,45 @@ async function initializeConnection(): Promise<GooseClient> {
   );
 
   monitorConnection(client);
+  resolvedClientUrl = wsUrl;
+  lastBootstrapStatus = { state: "connected", url: wsUrl };
 
   return client;
 }
 
+function isWebsocketUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "ws:" || parsed.protocol === "wss:";
+  } catch {
+    return false;
+  }
+}
+
+function resolveBootstrapState(): AcpBootstrapState {
+  const url = getActiveBackendServerUrl();
+  if (!url) {
+    return { state: "missing_url" };
+  }
+  if (!isWebsocketUrl(url)) {
+    return { state: "invalid_url", url };
+  }
+  return { state: "ready", url };
+}
+
 export async function getClient(): Promise<GooseClient> {
+  const activeUrl = getActiveBackendServerUrl();
+  if (
+    resolvedClient &&
+    resolvedClientUrl &&
+    activeUrl &&
+    activeUrl !== resolvedClientUrl
+  ) {
+    resolvedClient = null;
+    resolvedClientUrl = null;
+    clientPromise = null;
+  }
+
   if (resolvedClient) {
     return resolvedClient;
   }
@@ -120,6 +176,16 @@ export async function getClient(): Promise<GooseClient> {
         return client;
       })
       .catch((error) => {
+        const bootstrapState = resolveBootstrapState();
+        const failedUrl =
+          bootstrapState.state === "ready" ? bootstrapState.url : activeUrl;
+        if (failedUrl) {
+          lastBootstrapStatus = {
+            state: "connect_failed",
+            url: failedUrl,
+            message: error instanceof Error ? error.message : String(error),
+          };
+        }
         clientPromise = null;
         throw error;
       });
@@ -136,4 +202,8 @@ export function isClientReady(): boolean {
 
 export function getClientSync(): GooseClient | null {
   return resolvedClient;
+}
+
+export function getAcpBootstrapStatus() {
+  return lastBootstrapStatus;
 }

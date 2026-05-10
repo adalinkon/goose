@@ -39,6 +39,7 @@ export function buildInitScript(options?: {
       };
       const FAKE_ACP_URL = "ws://127.0.0.1:0/mock-acp";
       const ACP_SESSIONS = [];
+      const ACP_PERSONAS = [...PERSONAS];
       const PROVIDER_INVENTORY = [
         {
           providerId: "claude",
@@ -102,6 +103,13 @@ export function buildInitScript(options?: {
           modelId: "gpt-4.1",
         }),
       );
+      localStorage.setItem(
+        "goose-backend-servers",
+        JSON.stringify({
+          mock: FAKE_ACP_URL,
+        }),
+      );
+      localStorage.setItem("goose-backend-active-server", "mock");
       localStorage.setItem("goose:defaultProvider", "goose");
       localStorage.setItem(
         "goose:preferredModelsByAgent",
@@ -226,6 +234,61 @@ export function buildInitScript(options?: {
           }
           case "_goose/providers/list":
             return jsonRpcResult(message.id, { entries: PROVIDER_INVENTORY });
+          case "_goose/personas/list":
+          case "_goose/personas/refresh":
+            return jsonRpcResult(message.id, { personas: ACP_PERSONAS });
+          case "_goose/personas/create": {
+            const request = message.params?.request ?? {};
+            const persona = {
+              id: "mock-" + Math.random().toString(36).slice(2, 10),
+              displayName: request.displayName ?? "New Agent",
+              avatar: request.avatar ?? null,
+              systemPrompt: request.systemPrompt ?? "",
+              provider: request.provider,
+              model: request.model,
+              isBuiltin: false,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            ACP_PERSONAS.unshift(persona);
+            return jsonRpcResult(message.id, { persona });
+          }
+          case "_goose/personas/update": {
+            const id = message.params?.id;
+            const request = message.params?.request ?? {};
+            const index = ACP_PERSONAS.findIndex((persona) => persona.id === id);
+            if (index < 0) {
+              return jsonRpcResult(message.id, { persona: null });
+            }
+            ACP_PERSONAS[index] = {
+              ...ACP_PERSONAS[index],
+              ...request,
+              updatedAt: new Date().toISOString(),
+            };
+            return jsonRpcResult(message.id, { persona: ACP_PERSONAS[index] });
+          }
+          case "_goose/personas/delete": {
+            const id = message.params?.id;
+            const index = ACP_PERSONAS.findIndex((persona) => persona.id === id);
+            if (index >= 0) {
+              ACP_PERSONAS.splice(index, 1);
+            }
+            return jsonRpcResult(message.id, {});
+          }
+          case "_goose/personas/export":
+            return jsonRpcResult(message.id, {
+              json: "{}",
+              suggestedFilename: "persona.json",
+            });
+          case "_goose/personas/import":
+            return jsonRpcResult(message.id, { personas: ACP_PERSONAS });
+          case "_goose/personas/read_import_file":
+            return jsonRpcResult(message.id, { fileBytes: [123, 125], fileName: "persona.json" });
+          case "_goose/personas/save_avatar":
+          case "_goose/personas/save_avatar_bytes":
+            return jsonRpcResult(message.id, { filename: "avatar.png" });
+          case "_goose/personas/get_avatars_dir":
+            return jsonRpcResult(message.id, { path: "/tmp/avatars" });
           case "_goose/providers/setup/catalog/list":
             return jsonRpcResult(message.id, { providers: [] });
           case "_goose/providers/inventory/refresh":
@@ -318,6 +381,32 @@ export function buildInitScript(options?: {
           }
           case "_goose/sources/import":
             return jsonRpcResult(message.id, { sources: SKILLS.map(skillToSourceEntry) });
+          case "_goose/system/home_dir":
+            return jsonRpcResult(message.id, { path: "/tmp/home" });
+          case "_goose/system/path_exists":
+            return jsonRpcResult(message.id, { exists: false });
+          case "_goose/system/list_files_for_mentions":
+            return jsonRpcResult(message.id, { files: [] });
+          case "_goose/system/list_directory_entries":
+            return jsonRpcResult(message.id, { entries: [] });
+          case "_goose/system/inspect_attachment_paths":
+            return jsonRpcResult(message.id, { attachments: [] });
+          case "_goose/system/read_image_attachment":
+            return jsonRpcResult(message.id, { base64: "", mimeType: "image/png" });
+          case "_goose/system/resolve_path": {
+            const parts = message.params?.request?.parts ?? [];
+            const path = parts
+              .filter((part) => typeof part === "string" && part.length > 0)
+              .join("/");
+            const normalizedPath = path.startsWith("~/")
+              ? "/tmp/home/" + path.slice(2)
+              : path;
+            return jsonRpcResult(message.id, { path: normalizedPath });
+          }
+          case "_goose/projects/scan_icons":
+            return jsonRpcResult(message.id, { candidates: [] });
+          case "_goose/projects/read_icon":
+            return jsonRpcResult(message.id, { icon: "" });
           default:
             return jsonRpcResult(message.id, {});
         }

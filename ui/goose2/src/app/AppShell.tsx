@@ -44,8 +44,6 @@ import { perfLog } from "@/shared/lib/perfLog";
 import { useProviderInventoryStore } from "@/features/providers/stores/providerInventoryStore";
 import type { SkillInfo } from "@/features/skills/api/skills";
 import { toChatSkillDraft } from "@/features/skills/lib/skillChatPrompt";
-import { OnboardingFlow } from "@/features/onboarding/ui/OnboardingFlow";
-import { useOnboardingGate } from "@/features/onboarding/hooks/useOnboardingGate";
 import { Spinner } from "@/shared/ui/spinner";
 
 export type AppView =
@@ -149,7 +147,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const reorderProjects = useProjectStore((s) => s.reorderProjects);
   const providerInventoryEntries = useProviderInventoryStore((s) => s.entries);
   const startup = useAppStartup();
-  const onboardingGate = useOnboardingGate(startup.ready);
   const pendingProjectCreatedRef = useRef<((projectId: string) => void) | null>(
     null,
   );
@@ -356,13 +353,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   ]);
 
   useEffect(() => {
-    if (activeView !== "home" || onboardingGate.shouldShowOnboarding) {
+    if (activeView !== "home" || !startup.backendConnected) {
       return;
     }
     void ensureHomeSession().catch((error) => {
       console.error("Failed to ensure Home session:", error);
     });
-  }, [activeView, ensureHomeSession, onboardingGate.shouldShowOnboarding]);
+  }, [activeView, ensureHomeSession, startup.backendConnected]);
 
   const createNewTab = useCallback(
     async (title = DEFAULT_CHAT_TITLE, project?: ProjectInfo) => {
@@ -794,18 +791,6 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
         <Spinner className="size-5 text-brand" />
       </div>
-    );
-  }
-
-  if (onboardingGate.shouldShowOnboarding) {
-    return (
-      <OnboardingFlow
-        readiness={onboardingGate.readiness}
-        onComplete={(setup) => {
-          onboardingGate.completeOnboarding(setup);
-          setActiveView("home");
-        }}
-      />
     );
   }
 
