@@ -1,4 +1,4 @@
-import { getClient } from "./acpConnection";
+import { fetchJson } from "./gooseServeHttp";
 
 export interface FileTreeEntry {
   name: string;
@@ -19,13 +19,8 @@ export interface ImageAttachmentPayload {
 }
 
 export async function getHomeDir(): Promise<string> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod("_goose/system/home_dir", {});
-    return response.path as string;
-  } catch {
-    return "~";
-  }
+  const response = await fetchJson<{ path: string }>("/fs/home-dir");
+  return response.path;
 }
 
 export async function saveExportedSessionFile(
@@ -34,93 +29,62 @@ export async function saveExportedSessionFile(
 ): Promise<string | null> {
   const blob = new Blob([contents], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  try {
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = defaultFilename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    return defaultFilename;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = defaultFilename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return defaultFilename;
 }
 
 export async function pathExists(path: string): Promise<boolean> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod("_goose/system/path_exists", {
-      path,
-    });
-    return response.exists === true;
-  } catch {
-    return false;
-  }
+  const response = await fetchJson<{ exists: boolean }>("/fs/path-exists", {
+    query: { path },
+  });
+  return response.exists;
 }
 
 export async function listFilesForMentions(
   roots: string[],
   maxResults = 1500,
 ): Promise<string[]> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod(
-      "_goose/system/list_files_for_mentions",
-      {
-        roots,
-        maxResults,
-      },
-    );
-    return (response.files ?? []) as string[];
-  } catch {
-    return [];
-  }
+  const response = await fetchJson<{ files: string[] }>(
+    "/fs/list-files-for-mentions",
+    {
+      method: "POST",
+      body: { roots, maxResults },
+    },
+  );
+  return response.files ?? [];
 }
 
 export async function listDirectoryEntries(
   path: string,
 ): Promise<FileTreeEntry[]> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod(
-      "_goose/system/list_directory_entries",
-      {
-        path,
-      },
-    );
-    return (response.entries ?? []) as FileTreeEntry[];
-  } catch {
-    return [];
-  }
+  return fetchJson<FileTreeEntry[]>("/fs/list-directory-entries", {
+    query: { path },
+  });
 }
 
 export async function inspectAttachmentPaths(
   paths: string[],
 ): Promise<AttachmentPathInfo[]> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod(
-      "_goose/system/inspect_attachment_paths",
-      {
-        paths,
-      },
-    );
-    return (response.attachments ?? []) as AttachmentPathInfo[];
-  } catch {
-    return [];
-  }
+  const response = await fetchJson<{ attachments: AttachmentPathInfo[] }>(
+    "/fs/inspect-attachment-paths",
+    {
+      method: "POST",
+      body: { paths },
+    },
+  );
+  return response.attachments ?? [];
 }
 
 export async function readImageAttachment(
   path: string,
 ): Promise<ImageAttachmentPayload> {
-  const client = await getClient();
-  const response = await client.extMethod(
-    "_goose/system/read_image_attachment",
-    {
-      path,
-    },
-  );
-  return response as unknown as ImageAttachmentPayload;
+  return fetchJson<ImageAttachmentPayload>("/fs/read-image-attachment", {
+    query: { path },
+  });
 }

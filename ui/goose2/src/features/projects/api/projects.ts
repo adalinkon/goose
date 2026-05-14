@@ -1,4 +1,5 @@
 import { getClient } from "@/shared/api/acpConnection";
+import { fetchJson } from "@/shared/api/gooseServeHttp";
 
 export interface ProjectInfo {
   id: string;
@@ -123,23 +124,20 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 export async function scanProjectIcons(
   workingDirs: string[],
 ): Promise<ProjectIconCandidate[]> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod("_goose/projects/scan_icons", {
-      workingDirs,
-    });
-    return (response.candidates ?? []) as ProjectIconCandidate[];
-  } catch {
-    return [];
-  }
+  const response = await fetchJson<{ icons: ProjectIconCandidate[] }>(
+    "/fs/project-icons/scan",
+    {
+      method: "POST",
+      body: { workingDirs },
+    },
+  );
+  return response.icons ?? [];
 }
 
 export async function readProjectIcon(path: string): Promise<ProjectIconData> {
-  const client = await getClient();
-  const response = await client.extMethod("_goose/projects/read_icon", {
-    path,
+  return fetchJson<ProjectIconData>("/fs/project-icons/read", {
+    query: { path },
   });
-  return response as unknown as ProjectIconData;
 }
 
 export async function createProject(

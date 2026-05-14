@@ -39,6 +39,7 @@ import { SidebarSearchResults } from "./SidebarSearchResults";
 import { ServersDialog } from "./ServersDialog";
 import {
   getActiveBackendServerName,
+  getActiveBackendServerAuth,
   getBackendServers,
 } from "@/shared/api/backendConfig";
 import { checkBackendServerConnection } from "@/shared/api/backendConnection";
@@ -288,7 +289,10 @@ export function Sidebar({
     }
 
     setActiveServerStatus("checking");
-    const connected = await checkBackendServerConnection(activeServerUrl);
+    const connected = await checkBackendServerConnection(
+      activeServerUrl,
+      getActiveBackendServerAuth()?.token,
+    );
     if (probeId !== activeServerProbeRef.current) {
       return;
     }

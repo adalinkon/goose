@@ -13,7 +13,10 @@ import {
 import packageJson from "../../../package.json";
 import { createWebSocketStream } from "./createWebSocketStream";
 import { perfLog } from "@/shared/lib/perfLog";
-import { getActiveBackendServerUrl } from "./backendConfig";
+import {
+  getActiveBackendServerAuth,
+  getActiveBackendServerUrl,
+} from "./backendConfig";
 
 let notificationHandler: AcpNotificationHandler | null = null;
 
@@ -96,9 +99,10 @@ async function initializeConnection(): Promise<GooseClient> {
     throw new Error(`Invalid backend URL: ${bootstrapState.url}`);
   }
   const wsUrl = bootstrapState.url;
+  const secretKey = getActiveBackendServerAuth()?.token;
 
   const tStream = performance.now();
-  const stream = createWebSocketStream(wsUrl);
+  const stream = createWebSocketStream(wsUrl, secretKey);
 
   const client = new GooseClient(createClientCallbacks(), stream);
   perfLog(

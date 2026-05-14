@@ -31,6 +31,8 @@ interface UseChatSessionControllerOptions {
   sessionId: string | null;
   onMessageAccepted?: (sessionId: string) => void;
   onCreatePersonaRequested?: () => void;
+  ensureSession?: () => Promise<unknown>;
+  syncPendingHomeState?: boolean;
 }
 
 const PENDING_HOME_SESSION_ID = "__home_pending__";
@@ -49,6 +51,8 @@ export function useChatSessionController({
   sessionId,
   onMessageAccepted,
   onCreatePersonaRequested,
+  ensureSession,
+  syncPendingHomeState = false,
 }: UseChatSessionControllerOptions) {
   const stateSessionId = sessionId ?? PENDING_HOME_SESSION_ID;
   const {
@@ -470,6 +474,11 @@ export function useChatSessionController({
         if (!queue.queuedMessage) {
           queue.enqueue(text, personaId, attachments, sendOptions);
         }
+        if (syncPendingHomeState && ensureSession) {
+          void ensureSession().catch((error) => {
+            console.error("Failed to ensure Home session:", error);
+          });
+        }
         return true;
       }
 
@@ -495,10 +504,12 @@ export function useChatSessionController({
     [
       chatState,
       handlePersonaChange,
+      ensureSession,
       queue,
       sessionId,
       selectedPersonaId,
       sendMessage,
+      syncPendingHomeState,
     ],
   );
 
@@ -554,7 +565,7 @@ export function useChatSessionController({
   }, [sessionId]);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId || !syncPendingHomeState) {
       return;
     }
 
@@ -563,7 +574,7 @@ export function useChatSessionController({
     void pendingSkillDrafts;
     void pendingQueuedMessage;
 
-    const syncPendingHomeState = async () => {
+    const syncPendingHomeStateToSession = async () => {
       const chatState = useChatStore.getState();
       const pendingDraft =
         chatState.draftsBySession[PENDING_HOME_SESSION_ID] ?? "";
@@ -673,7 +684,7 @@ export function useChatSessionController({
       useChatStore.getState().cleanupSession(PENDING_HOME_SESSION_ID);
     };
 
-    void syncPendingHomeState();
+    void syncPendingHomeStateToSession();
 
     return () => {
       cancelled = true;
@@ -693,6 +704,7 @@ export function useChatSessionController({
     session?.agentId,
     session?.projectId,
     sessionId,
+    syncPendingHomeState,
   ]);
 
   return {

@@ -321,7 +321,7 @@ describe("useChatSessionController", () => {
   it("applies the pending Home model to ACP when a real session becomes active", async () => {
     const { result, rerender } = renderHook(
       ({ sessionId }: { sessionId: string | null }) =>
-        useChatSessionController({ sessionId }),
+        useChatSessionController({ sessionId, syncPendingHomeState: true }),
       {
         initialProps: { sessionId: null as string | null },
       },
@@ -377,7 +377,7 @@ describe("useChatSessionController", () => {
 
     const { result, rerender } = renderHook(
       ({ sessionId }: { sessionId: string | null }) =>
-        useChatSessionController({ sessionId }),
+        useChatSessionController({ sessionId, syncPendingHomeState: true }),
       {
         initialProps: { sessionId: null as string | null },
       },
@@ -447,12 +447,43 @@ describe("useChatSessionController", () => {
     ).toBeNull();
   });
 
+  it("does not move a pending Home queued message into an opened project session", async () => {
+    useChatStore.getState().enqueueMessage("__home_pending__", { text: "hi" });
+    useChatSessionStore.setState((state) => ({
+      sessions: [
+        {
+          id: "project-session",
+          title: "Test project chat",
+          projectId: "project-test",
+          providerId: "openai",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z",
+          messageCount: 1,
+        },
+        ...state.sessions,
+      ],
+    }));
+
+    renderHook(() =>
+      useChatSessionController({ sessionId: "project-session" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        useChatStore.getState().queuedMessageBySession.__home_pending__,
+      ).toEqual({ text: "hi" });
+    });
+    expect(
+      useChatStore.getState().queuedMessageBySession["project-session"],
+    ).toBeUndefined();
+  });
+
   it("does not persist or record a pending Home model when ACP rejects it", async () => {
     mockAcpSetModel.mockRejectedValueOnce(new Error("set model failed"));
 
     const { result, rerender } = renderHook(
       ({ sessionId }: { sessionId: string | null }) =>
-        useChatSessionController({ sessionId }),
+        useChatSessionController({ sessionId, syncPendingHomeState: true }),
       {
         initialProps: { sessionId: null as string | null },
       },

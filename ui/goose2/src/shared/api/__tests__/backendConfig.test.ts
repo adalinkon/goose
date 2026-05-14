@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  getActiveBackendServerAuth,
   getActiveBackendServerName,
   getActiveBackendServerUrl,
   getStoredBackendUrl,
   resolveBackendServerUrl,
   setActiveBackendServerName,
+  setBackendServerAuth,
   setBackendServer,
 } from "../backendConfig";
 
@@ -54,5 +56,16 @@ describe("backendConfig URL resolution", () => {
 
     expect(getActiveBackendServerName()).toBe("local");
     expect(getActiveBackendServerUrl()).toBe("ws://localhost:3284/acp");
+  });
+
+  it("returns active server auth payload", () => {
+    setBackendServer("local", "localhost:3284");
+    setActiveBackendServerName("local");
+    setBackendServerAuth("local", { username: "demo", token: "secret" });
+
+    expect(getActiveBackendServerAuth()).toEqual({
+      username: "demo",
+      token: "secret",
+    });
   });
 });

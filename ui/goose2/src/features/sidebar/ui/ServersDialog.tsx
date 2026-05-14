@@ -121,7 +121,7 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
     const probed = await Promise.all(
       items.map(async (item) => ({
         name: item.name,
-        status: (await checkBackendServerConnection(item.url))
+        status: (await checkBackendServerConnection(item.url, item.auth?.token))
           ? "connected"
           : "disconnected",
       })),

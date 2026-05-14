@@ -204,6 +204,14 @@ export function getActiveBackendServerUrl(): string | null {
   return null;
 }
 
+export function getActiveBackendServerAuth(): BackendServerAuth | null {
+  const activeName = getActiveBackendServerName();
+  if (!activeName) {
+    return null;
+  }
+  return getBackendServerAuth(activeName);
+}
+
 export function getBackendServerAuth(
   serverName: string,
 ): BackendServerAuth | null {

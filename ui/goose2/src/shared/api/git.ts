@@ -1,55 +1,38 @@
-import { getClient } from "./acpConnection";
 import type {
   ChangedFile,
   CreatedWorktree,
   GitState,
 } from "@/shared/types/git";
+import { fetchJson } from "./gooseServeHttp";
 
 export async function getGitState(path: string): Promise<GitState> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod("_goose/git/state", { path });
-    return response as unknown as GitState;
-  } catch {
-    return {
-      isGitRepo: false,
-      currentBranch: null,
-      dirtyFileCount: 0,
-      incomingCommitCount: 0,
-      worktrees: [],
-      isWorktree: false,
-      mainWorktreePath: null,
-      localBranches: [],
-    };
-  }
+  return fetchJson<GitState>("/git/state", { query: { path } });
 }
 
 export async function switchBranch(
   path: string,
   branch: string,
 ): Promise<void> {
-  const client = await getClient();
-  await client.extMethod("_goose/git/switch_branch", { path, branch });
+  await fetchJson("/git/switch", {
+    method: "POST",
+    body: { path, branch },
+  });
 }
 
 export async function stashChanges(path: string): Promise<void> {
-  const client = await getClient();
-  await client.extMethod("_goose/git/stash", { path });
+  await fetchJson("/git/stash", { method: "POST", body: { path } });
 }
 
 export async function initRepo(path: string): Promise<void> {
-  const client = await getClient();
-  await client.extMethod("_goose/git/init", { path });
+  await fetchJson("/git/init", { method: "POST", body: { path } });
 }
 
 export async function fetchRepo(path: string): Promise<void> {
-  const client = await getClient();
-  await client.extMethod("_goose/git/fetch", { path });
+  await fetchJson("/git/fetch", { method: "POST", body: { path } });
 }
 
 export async function pullRepo(path: string): Promise<void> {
-  const client = await getClient();
-  await client.extMethod("_goose/git/pull", { path });
+  await fetchJson("/git/pull", { method: "POST", body: { path } });
 }
 
 export async function createBranch(
@@ -57,24 +40,20 @@ export async function createBranch(
   name: string,
   baseBranch: string,
 ): Promise<void> {
-  const client = await getClient();
-  await client.extMethod("_goose/git/create_branch", {
-    path,
-    name,
-    baseBranch,
+  await fetchJson("/git/create-branch", {
+    method: "POST",
+    body: { path, name, baseBranch },
   });
 }
 
 export async function getChangedFiles(path: string): Promise<ChangedFile[]> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod("_goose/git/changed_files", {
-      path,
-    });
-    return (response.files ?? []) as ChangedFile[];
-  } catch {
-    return [];
-  }
+  const response = await fetchJson<{ files: ChangedFile[] }>(
+    "/git/changed-files",
+    {
+      query: { path },
+    },
+  );
+  return response.files ?? [];
 }
 
 export async function createWorktree(
@@ -84,13 +63,14 @@ export async function createWorktree(
   createBranch: boolean,
   baseBranch?: string,
 ): Promise<CreatedWorktree> {
-  const client = await getClient();
-  const response = await client.extMethod("_goose/git/create_worktree", {
-    path,
-    name,
-    branch,
-    createBranch,
-    baseBranch,
+  return fetchJson<CreatedWorktree>("/git/create-worktree", {
+    method: "POST",
+    body: {
+      path,
+      name,
+      branch,
+      createBranch,
+      baseBranch,
+    },
   });
-  return response as unknown as CreatedWorktree;
 }

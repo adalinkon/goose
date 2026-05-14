@@ -20,6 +20,7 @@ interface AppShellContentProps {
     initialWorkingDir?: string | null;
     onCreated?: (projectId: string) => void;
   }) => void;
+  onEnsureHomeSession: () => Promise<unknown>;
   onActivateHomeSession: (sessionId: string) => void;
   onRenameChat: (sessionId: string, nextTitle: string) => void;
   onSelectSession: (sessionId: string) => void;
@@ -39,6 +40,7 @@ export function AppShellContent({
   onCreatePersona,
   onArchiveChat,
   onCreateProject,
+  onEnsureHomeSession,
   onActivateHomeSession,
   onRenameChat,
   onSelectSession,
@@ -77,6 +79,7 @@ export function AppShellContent({
           sessionId={homeSessionId}
           onActivateSession={onActivateHomeSession}
           onCreatePersona={onCreatePersona}
+          onEnsureSession={onEnsureHomeSession}
           onCreateProject={onCreateProject}
         />
       );
@@ -86,6 +89,7 @@ export function AppShellContent({
           sessionId={homeSessionId}
           onActivateSession={onActivateHomeSession}
           onCreatePersona={onCreatePersona}
+          onEnsureSession={onEnsureHomeSession}
           onCreateProject={onCreateProject}
         />
       );

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -39,7 +39,7 @@ export function AgentsView() {
   const { t } = useTranslation(["agents", "common"]);
   const [search, setSearch] = useState("");
   const [deletingPersona, setDeletingPersona] = useState<Persona | null>(null);
-  const importInputRef = useRef<HTMLInputElement>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
 
   const personas = useAgentStore(selectPersonas);
   const personasLoading = useAgentStore(selectPersonasLoading);
@@ -183,35 +183,32 @@ export function AgentsView() {
     [refreshFromDisk, t],
   );
 
-  const handleImportPicker = useCallback(async () => {
-    importInputRef.current?.click();
+  const handleImportPicker = useCallback(() => {
+    const input = document.getElementById(
+      "persona-import-input",
+    ) as HTMLInputElement | null;
+    input?.click();
   }, []);
 
   const handleImportInputChange = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
+    async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
-      if (!file) {
-        return;
-      }
+      if (!file) return;
 
-      const validationMessage = validateImportFile({
-        name: file.name,
-        type: file.type,
-      });
+      const validationMessage = validateImportFile(file);
       if (validationMessage) {
         toast.error(validationMessage);
-        event.target.value = "";
+        setFileInputKey((current) => current + 1);
         return;
       }
 
       try {
-        const buffer = await file.arrayBuffer();
-        const fileBytes = Array.from(new Uint8Array(buffer));
-        await handleImportFileBytes(fileBytes, file.name);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        await handleImportFileBytes(Array.from(bytes), file.name);
       } catch (err) {
         toast.error(formatAgentError(err, t("view.importFailed")));
       } finally {
-        event.target.value = "";
+        setFileInputKey((current) => current + 1);
       }
     },
     [handleImportFileBytes, t, validateImportFile],
@@ -233,11 +230,12 @@ export function AgentsView() {
             </div>
             <div className="flex items-center gap-2">
               <input
-                ref={importInputRef}
+                id="persona-import-input"
+                key={fileInputKey}
                 type="file"
-                accept=".json"
+                accept=".json,application/json"
                 className="hidden"
-                onChange={handleImportInputChange}
+                onChange={(event) => void handleImportInputChange(event)}
               />
               <Button
                 type="button"

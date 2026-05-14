@@ -854,6 +854,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
               onCreatePersona={handleCreatePersona}
               onArchiveChat={handleArchiveChat}
               onCreateProject={openCreateProjectDialog}
+              onEnsureHomeSession={ensureHomeSession}
               onActivateHomeSession={activateHomeSession}
               onRenameChat={handleRenameChat}
               onSelectSession={handleSelectSession}

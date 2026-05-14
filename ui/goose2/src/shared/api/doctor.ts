@@ -1,4 +1,4 @@
-import { getClient } from "./acpConnection";
+import { fetchJson } from "./gooseServeHttp";
 
 export type FixType = "command" | "bridge";
 
@@ -20,19 +20,15 @@ export interface DoctorReport {
 }
 
 export async function runDoctor(): Promise<DoctorReport> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod("_goose/doctor/run", {});
-    return response as unknown as DoctorReport;
-  } catch {
-    return { checks: [] };
-  }
+  return fetchJson<DoctorReport>("/doctor/run", { method: "POST" });
 }
 
 export async function runDoctorFix(
   checkId: string,
   fixType: FixType,
 ): Promise<void> {
-  const client = await getClient();
-  await client.extMethod("_goose/doctor/fix", { checkId, fixType });
+  await fetchJson("/doctor/fix", {
+    method: "POST",
+    body: { checkId, fixType },
+  });
 }

@@ -1,7 +1,17 @@
 import { resolveBackendServerUrl } from "./backendConfig";
 
+function withSecretQuery(url: string, secretKey?: string): string {
+  if (!secretKey) {
+    return url;
+  }
+  const parsed = new URL(url);
+  parsed.searchParams.set("secret", secretKey);
+  return parsed.toString();
+}
+
 export async function checkBackendServerConnection(
   serverUrl: string,
+  secretKey?: string,
   timeoutMs = 2_500,
 ): Promise<boolean> {
   const resolvedUrl = resolveBackendServerUrl(serverUrl);
@@ -14,7 +24,7 @@ export async function checkBackendServerConnection(
     let socket: WebSocket;
 
     try {
-      socket = new WebSocket(resolvedUrl);
+      socket = new WebSocket(withSecretQuery(resolvedUrl, secretKey));
     } catch {
       resolve(false);
       return;

@@ -388,8 +388,104 @@ pub(crate) fn routes(secret_key: String) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_csp_source, parse_domains, peer_addr_is_loopback};
+    use super::{normalize_csp_source, parse_domains, peer_addr_is_loopback, routes};
+    use axum::http::{header, StatusCode};
     use std::net::SocketAddr;
+
+    async fn spawn_app(secret_key: &str) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind test server");
+        let addr = listener.local_addr().expect("test server address");
+        let app = routes(secret_key.to_string());
+
+        let handle = tokio::spawn(async move {
+            if let Err(error) = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            {
+                panic!("test server stopped: {error}");
+            }
+        });
+
+        (format!("http://{addr}"), handle)
+    }
+
+    #[tokio::test]
+    async fn proxy_and_guest_routes_require_secret() {
+        let (base_url, server) = spawn_app("test-secret").await;
+        let client = reqwest::Client::new();
+
+        let unauthorized = client
+            .get(format!("{base_url}/mcp-app-proxy?secret=wrong"))
+            .send()
+            .await
+            .expect("unauthorized response");
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let unauthorized_guest = client
+            .post(format!("{base_url}/mcp-app-guest"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(r#"{"secret":"wrong","html":"<p>bad</p>"}"#)
+            .send()
+            .await
+            .expect("guest unauthorized response");
+        assert_eq!(unauthorized_guest.status(), StatusCode::UNAUTHORIZED);
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn proxy_and_guest_routes_accept_secret() {
+        let (base_url, server) = spawn_app("test-secret").await;
+        let client = reqwest::Client::new();
+
+        let proxy = client
+            .get(format!("{base_url}/mcp-app-proxy?secret=test-secret"))
+            .send()
+            .await
+            .expect("proxy response");
+        assert_eq!(proxy.status(), StatusCode::OK);
+        assert_eq!(
+            proxy
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/html; charset=utf-8")
+        );
+
+        let guest = client
+            .post(format!("{base_url}/mcp-app-guest"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(r#"{"secret":"test-secret","html":"<html><body>ok</body></html>"}"#)
+            .send()
+            .await
+            .expect("guest response");
+        assert_eq!(guest.status(), StatusCode::OK);
+
+        let guest_json: serde_json::Value = guest.json().await.expect("guest json");
+        let guest_url = guest_json
+            .get("guestUrl")
+            .and_then(|value| value.as_str())
+            .expect("guest url");
+        assert!(guest_url.contains("/mcp-app-guest?nonce="));
+
+        let guest_page = client
+            .get(guest_url)
+            .send()
+            .await
+            .expect("guest page response");
+        assert_eq!(guest_page.status(), StatusCode::OK);
+        assert!(guest_page
+            .text()
+            .await
+            .expect("guest text")
+            .contains("<html><body>ok</body></html>"));
+
+        server.abort();
+    }
 
     #[test]
     fn normalizes_url_sources_to_origins() {

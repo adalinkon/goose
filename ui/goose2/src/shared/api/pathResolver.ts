@@ -1,4 +1,4 @@
-import { getClient } from "./acpConnection";
+import { fetchJson } from "./gooseServeHttp";
 
 export interface ResolvePathParams {
   parts: string[];
@@ -11,14 +11,8 @@ export interface ResolvedPath {
 export async function resolvePath({
   parts,
 }: ResolvePathParams): Promise<ResolvedPath> {
-  try {
-    const client = await getClient();
-    const response = await client.extMethod("_goose/system/resolve_path", {
-      request: { parts },
-    });
-    return response as unknown as ResolvedPath;
-  } catch {
-    const normalized = parts.map((part) => part.trim()).filter(Boolean);
-    return { path: normalized.join("/") };
-  }
+  return fetchJson<ResolvedPath>("/fs/resolve-path", {
+    method: "POST",
+    body: { parts },
+  });
 }
