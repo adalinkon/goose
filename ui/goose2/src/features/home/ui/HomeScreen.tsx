@@ -42,7 +42,6 @@ interface HomeScreenProps {
   sessionId: string | null;
   onActivateSession: (sessionId: string) => void;
   onCreatePersona?: () => void;
-  onEnsureSession?: () => Promise<unknown>;
   onCreateProject?: (options?: {
     onCreated?: (projectId: string) => void;
   }) => void;
@@ -52,21 +51,17 @@ function HomeComposer({
   sessionId,
   onActivateSession,
   onCreatePersona,
-  onEnsureSession,
   onCreateProject,
 }: {
   sessionId: string | null;
   onActivateSession: (sessionId: string) => void;
   onCreatePersona?: () => void;
-  onEnsureSession?: () => Promise<unknown>;
   onCreateProject?: HomeScreenProps["onCreateProject"];
 }) {
   const controller = useChatSessionController({
     sessionId,
     onMessageAccepted: onActivateSession,
     onCreatePersonaRequested: onCreatePersona,
-    ensureSession: onEnsureSession,
-    syncPendingHomeState: true,
   });
 
   return (
@@ -129,7 +124,6 @@ export function HomeScreen({
   sessionId,
   onActivateSession,
   onCreatePersona,
-  onEnsureSession,
   onCreateProject,
 }: HomeScreenProps) {
   const { t } = useTranslation("home");
@@ -150,7 +144,6 @@ export function HomeScreen({
             sessionId={sessionId}
             onActivateSession={onActivateSession}
             onCreatePersona={onCreatePersona}
-            onEnsureSession={onEnsureSession}
             onCreateProject={onCreateProject}
           />
         </div>

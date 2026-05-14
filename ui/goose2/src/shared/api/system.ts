@@ -1,4 +1,4 @@
-import { fetchJson } from "./gooseServeHttp";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface FileTreeEntry {
   name: string;
@@ -19,72 +19,41 @@ export interface ImageAttachmentPayload {
 }
 
 export async function getHomeDir(): Promise<string> {
-  const response = await fetchJson<{ path: string }>("/fs/home-dir");
-  return response.path;
+  return invoke("get_home_dir");
 }
 
 export async function saveExportedSessionFile(
   defaultFilename: string,
   contents: string,
 ): Promise<string | null> {
-  const blob = new Blob([contents], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = defaultFilename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  return defaultFilename;
+  return invoke("save_exported_session_file", { defaultFilename, contents });
 }
 
 export async function pathExists(path: string): Promise<boolean> {
-  const response = await fetchJson<{ exists: boolean }>("/fs/path-exists", {
-    query: { path },
-  });
-  return response.exists;
+  return invoke("path_exists", { path });
 }
 
 export async function listFilesForMentions(
   roots: string[],
   maxResults = 1500,
 ): Promise<string[]> {
-  const response = await fetchJson<{ files: string[] }>(
-    "/fs/list-files-for-mentions",
-    {
-      method: "POST",
-      body: { roots, maxResults },
-    },
-  );
-  return response.files ?? [];
+  return invoke("list_files_for_mentions", { roots, maxResults });
 }
 
 export async function listDirectoryEntries(
   path: string,
 ): Promise<FileTreeEntry[]> {
-  return fetchJson<FileTreeEntry[]>("/fs/list-directory-entries", {
-    query: { path },
-  });
+  return invoke("list_directory_entries", { path });
 }
 
 export async function inspectAttachmentPaths(
   paths: string[],
 ): Promise<AttachmentPathInfo[]> {
-  const response = await fetchJson<{ attachments: AttachmentPathInfo[] }>(
-    "/fs/inspect-attachment-paths",
-    {
-      method: "POST",
-      body: { paths },
-    },
-  );
-  return response.attachments ?? [];
+  return invoke("inspect_attachment_paths", { paths });
 }
 
 export async function readImageAttachment(
   path: string,
 ): Promise<ImageAttachmentPayload> {
-  return fetchJson<ImageAttachmentPayload>("/fs/read-image-attachment", {
-    query: { path },
-  });
+  return invoke("read_image_attachment", { path });
 }

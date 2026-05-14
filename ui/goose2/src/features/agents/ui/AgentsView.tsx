@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback, type ChangeEvent } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { SearchBar } from "@/shared/ui/SearchBar";
@@ -21,7 +22,11 @@ import {
 } from "@/features/agents/stores/agentSelectors";
 import { PersonaGallery } from "@/features/agents/ui/PersonaGallery";
 import { PersonaEditor } from "@/features/agents/ui/PersonaEditor";
-import { exportPersona, importPersonas } from "@/shared/api/agents";
+import {
+  exportPersona,
+  importPersonas,
+  readImportPersonaFile,
+} from "@/shared/api/agents";
 import { usePersonas } from "@/features/agents/hooks/usePersonas";
 import type {
   Persona,
@@ -39,7 +44,6 @@ export function AgentsView() {
   const { t } = useTranslation(["agents", "common"]);
   const [search, setSearch] = useState("");
   const [deletingPersona, setDeletingPersona] = useState<Persona | null>(null);
-  const [fileInputKey, setFileInputKey] = useState(0);
 
   const personas = useAgentStore(selectPersonas);
   const personasLoading = useAgentStore(selectPersonasLoading);
@@ -115,7 +119,8 @@ export function AgentsView() {
   );
 
   const handleDeletePersona = useCallback((persona: Persona) => {
-    if (getPersonaSource(persona) === "builtin") return;
+    if (getPersonaSource(persona) === "builtin" || persona.writable === false)
+      return;
     setDeletingPersona(persona);
   }, []);
 
@@ -183,36 +188,40 @@ export function AgentsView() {
     [refreshFromDisk, t],
   );
 
-  const handleImportPicker = useCallback(() => {
-    const input = document.getElementById(
-      "persona-import-input",
-    ) as HTMLInputElement | null;
-    input?.click();
-  }, []);
+  const handleImportPicker = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        title: t("common:actions.import"),
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"],
+          },
+        ],
+      });
 
-  const handleImportInputChange = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-
-      const validationMessage = validateImportFile(file);
-      if (validationMessage) {
-        toast.error(validationMessage);
-        setFileInputKey((current) => current + 1);
+      if (!selected || Array.isArray(selected)) {
         return;
       }
 
-      try {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        await handleImportFileBytes(Array.from(bytes), file.name);
-      } catch (err) {
-        toast.error(formatAgentError(err, t("view.importFailed")));
-      } finally {
-        setFileInputKey((current) => current + 1);
+      const { fileBytes, fileName } = await readImportPersonaFile(selected);
+      const validationMessage = validateImportFile({
+        name: fileName,
+        type: "",
+      });
+
+      if (validationMessage) {
+        toast.error(validationMessage);
+        return;
       }
-    },
-    [handleImportFileBytes, t, validateImportFile],
-  );
+
+      await handleImportFileBytes(fileBytes, fileName);
+    } catch (err) {
+      toast.error(formatAgentError(err, t("view.importFailed")));
+    }
+  }, [handleImportFileBytes, t, validateImportFile]);
 
   return (
     <div className="flex flex-1 flex-col h-full min-h-0">
@@ -229,14 +238,6 @@ export function AgentsView() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <input
-                id="persona-import-input"
-                key={fileInputKey}
-                type="file"
-                accept=".json,application/json"
-                className="hidden"
-                onChange={(event) => void handleImportInputChange(event)}
-              />
               <Button
                 type="button"
                 variant="outline-flat"

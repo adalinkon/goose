@@ -1,4 +1,4 @@
-import { fetchJson } from "./gooseServeHttp";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface ResolvePathParams {
   parts: string[];
@@ -11,8 +11,7 @@ export interface ResolvedPath {
 export async function resolvePath({
   parts,
 }: ResolvePathParams): Promise<ResolvedPath> {
-  return fetchJson<ResolvedPath>("/fs/resolve-path", {
-    method: "POST",
-    body: { parts },
+  return invoke("resolve_path", {
+    request: { parts },
   });
 }

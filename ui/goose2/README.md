@@ -28,9 +28,3 @@ Run `just` to list available commands, or see [justfile](./justfile) for the ful
 - [LICENSE](./LICENSE) license terms
 
 Project leads should keep this README, [CODEOWNERS](./CODEOWNERS), and the issue templates current. If this repo grows beyond the quick-start flow above, add a `CONTRIBUTING.md` and link it here once it exists.
-
-
-# Frontend version
-
-run backend: GOOSE_SERVER__SECRET_KEY=test && ../../target/debug/goose serve --host 127.0.0.1 --port 3284
-run fronted: source ../../bin/activate-hermit && just dev-frontend

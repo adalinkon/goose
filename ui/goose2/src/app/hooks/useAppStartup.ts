@@ -40,25 +40,22 @@ export function filterStartupProvidersForDistro(
 export function useAppStartup() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [backendConnected, setBackendConnected] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const tStartup = performance.now();
       perfLog("[perf:startup] useAppStartup begin");
-      let isBackendConnected = false;
       try {
         const tConn = performance.now();
         setNotificationHandler(notificationHandler);
         await getClient();
-        isBackendConnected = true;
-        setBackendConnected(true);
         perfLog(
           `[perf:startup] ACP getClient ready in ${(performance.now() - tConn).toFixed(1)}ms`,
         );
-      } catch (_err) {
-        setBackendConnected(false);
+      } catch (err) {
+        console.error("Failed to initialize ACP connection:", err);
+        setError(err);
       }
 
       const store = useAgentStore.getState();
@@ -175,36 +172,34 @@ export function useAppStartup() {
         setActiveSession(null);
       };
 
+      // Catalog loading has its own fallback/error state and should not block
+      // sessions, personas, or configured provider inventory during startup.
+      void loadProviderCatalog();
+
       await loadDistroBundle();
 
-      if (isBackendConnected) {
-        // Catalog loading has its own fallback/error state and should not block
-        // sessions, personas, or configured provider inventory during startup.
-        void loadProviderCatalog();
+      const providersAndInventoryLoad = loadProvidersAndInventory();
 
-        const providersAndInventoryLoad = loadProvidersAndInventory();
-
-        await Promise.allSettled([
-          loadPersonas(),
-          providersAndInventoryLoad,
-          loadSessionState(),
-        ]);
-        // Background refresh updates stale inventory after the first usable
-        // provider list is available.
-        void providersAndInventoryLoad.then(async (entries) => {
-          try {
-            const { backgroundRefreshInventory } = await import(
-              "@/features/providers/api/inventory"
-            );
-            await backgroundRefreshInventory(inventoryStore, entries);
-          } catch (err) {
-            console.error(
-              "Failed to refresh provider inventory on startup:",
-              err,
-            );
-          }
-        });
-      }
+      await Promise.allSettled([
+        loadPersonas(),
+        providersAndInventoryLoad,
+        loadSessionState(),
+      ]);
+      // Background refresh updates stale inventory after the first usable
+      // provider list is available.
+      void providersAndInventoryLoad.then(async (entries) => {
+        try {
+          const { backgroundRefreshInventory } = await import(
+            "@/features/providers/api/inventory"
+          );
+          await backgroundRefreshInventory(inventoryStore, entries);
+        } catch (err) {
+          console.error(
+            "Failed to refresh provider inventory on startup:",
+            err,
+          );
+        }
+      });
       perfLog(
         `[perf:startup] useAppStartup complete in ${(performance.now() - tStartup).toFixed(1)}ms`,
       );
@@ -224,5 +219,5 @@ export function useAppStartup() {
     };
   }, []);
 
-  return { ready, error, backendConnected };
+  return { ready, error };
 }

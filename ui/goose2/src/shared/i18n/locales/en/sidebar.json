@@ -1,5 +1,6 @@
 {
   "actions": {
+    "backToMainNavigation": "Back",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "newChat": "New chat",
@@ -14,6 +15,7 @@
     "agents": "Agents",
     "extensions": "Extensions",
     "home": "Home",
+    "main": "Main navigation",
     "sessionHistory": "Session history",
     "skills": "Skills"
   },
@@ -21,26 +23,6 @@
     "error": "Message search failed. Showing metadata matches only. Try again.",
     "placeholder": "Search chats...",
     "searching": "Searching chats..."
-  },
-  "servers": {
-    "title": "Servers",
-    "open": "Open servers",
-    "close": "Close servers",
-    "back": "Back",
-    "none": "No server",
-    "empty": "No servers found.",
-    "remove": "Remove server",
-    "searchPlaceholder": "Search servers",
-    "addServer": "Add server",
-    "serverAddress": "Server address",
-    "serverNameOptional": "Server name (optional)",
-    "usernameOptional": "Username (optional)",
-    "tokenOptional": "Token (optional)",
-    "namePlaceholder": "server_name",
-    "urlPlaceholder": "127.0.0.1:3284",
-    "usernamePlaceholder": "username",
-    "tokenPlaceholder": "token",
-    "noUsername": "no username"
   },
   "sections": {
     "projects": "Projects",

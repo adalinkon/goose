@@ -1,14 +1,7 @@
 import type { AnyMessage, Stream } from "@agentclientprotocol/sdk";
 
-export function createWebSocketStream(
-  wsUrl: string,
-  secretKey?: string,
-): Stream {
-  const url = new URL(wsUrl);
-  if (secretKey) {
-    url.searchParams.set("secret", secretKey);
-  }
-  const ws = new WebSocket(url.toString());
+export function createWebSocketStream(wsUrl: string): Stream {
+  const ws = new WebSocket(wsUrl);
 
   const incoming: AnyMessage[] = [];
   const waiters: Array<() => void> = [];

@@ -5,13 +5,16 @@ import { ExtensionsView } from "@/features/extensions/ui/ExtensionsView";
 import { AgentsView } from "@/features/agents/ui/AgentsView";
 import { ProjectsView } from "@/features/projects/ui/ProjectsView";
 import { SessionHistoryView } from "@/features/sessions/ui/SessionHistoryView";
+import { SettingsView } from "@/features/settings/ui/SettingsView";
 import type { ChatSession } from "@/features/chat/stores/chatSessionStore";
 import type { SkillInfo } from "@/features/skills/api/skills";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import type { AppView } from "../AppShell";
+import type { SectionId } from "@/features/settings/ui/settingsSections";
 
 interface AppShellContentProps {
   activeView: AppView;
+  activeSettingsSection: SectionId;
   activeSession?: ChatSession;
   homeSessionId: string | null;
   onCreatePersona: () => void;
@@ -20,7 +23,6 @@ interface AppShellContentProps {
     initialWorkingDir?: string | null;
     onCreated?: (projectId: string) => void;
   }) => void;
-  onEnsureHomeSession: () => Promise<unknown>;
   onActivateHomeSession: (sessionId: string) => void;
   onRenameChat: (sessionId: string, nextTitle: string) => void;
   onSelectSession: (sessionId: string) => void;
@@ -35,12 +37,12 @@ interface AppShellContentProps {
 
 export function AppShellContent({
   activeView,
+  activeSettingsSection,
   activeSession,
   homeSessionId,
   onCreatePersona,
   onArchiveChat,
   onCreateProject,
-  onEnsureHomeSession,
   onActivateHomeSession,
   onRenameChat,
   onSelectSession,
@@ -49,6 +51,8 @@ export function AppShellContent({
   onStartChatWithSkill,
 }: AppShellContentProps) {
   switch (activeView) {
+    case "settings":
+      return <SettingsView activeSection={activeSettingsSection} />;
     case "skills":
       return <SkillsView onStartChatWithSkill={onStartChatWithSkill} />;
     case "extensions":
@@ -79,7 +83,6 @@ export function AppShellContent({
           sessionId={homeSessionId}
           onActivateSession={onActivateHomeSession}
           onCreatePersona={onCreatePersona}
-          onEnsureSession={onEnsureHomeSession}
           onCreateProject={onCreateProject}
         />
       );
@@ -89,7 +92,6 @@ export function AppShellContent({
           sessionId={homeSessionId}
           onActivateSession={onActivateHomeSession}
           onCreatePersona={onCreatePersona}
-          onEnsureSession={onEnsureHomeSession}
           onCreateProject={onCreateProject}
         />
       );

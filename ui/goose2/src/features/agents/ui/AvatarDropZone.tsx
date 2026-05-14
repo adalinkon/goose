@@ -4,20 +4,27 @@ import { Camera, X } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
-import { savePersonaAvatarBytes } from "@/shared/api/agents";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { Avatar } from "@/shared/types/agents";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
+function filePathToFileUrl(filePath: string): string {
+  const normalizedPath = filePath.replaceAll("\\", "/");
+  const url = new URL("file://");
+  url.pathname = normalizedPath.startsWith("/")
+    ? normalizedPath
+    : `/${normalizedPath}`;
+  return url.href;
+}
+
 interface AvatarDropZoneProps {
-  personaId: string;
   avatar: Avatar | null | undefined;
   onChange: (avatar: Avatar | null) => void;
   disabled?: boolean;
 }
 
 export function AvatarDropZone({
-  personaId,
   avatar,
   onChange,
   disabled = false,
@@ -27,7 +34,6 @@ export function AvatarDropZone({
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dragDepthRef = useRef(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const avatarSrc = useAvatarSrc(avatar);
 
@@ -44,11 +50,20 @@ export function AvatarDropZone({
 
       setIsUploading(true);
       try {
-        const buffer = await file.arrayBuffer();
-        const bytes = Array.from(new Uint8Array(buffer));
-        const filename = await savePersonaAvatarBytes(personaId, bytes, ext);
+        const value = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.addEventListener("load", () => {
+            if (typeof reader.result === "string") {
+              resolve(reader.result);
+            } else {
+              reject(new Error("Avatar file could not be read as a data URL"));
+            }
+          });
+          reader.addEventListener("error", () => reject(reader.error));
+          reader.readAsDataURL(file);
+        });
 
-        onChange({ type: "local", value: filename });
+        onChange({ type: "url", value });
       } catch (err) {
         console.error("Failed to save avatar:", err);
         setError(t("avatar.saveFailed"));
@@ -56,7 +71,31 @@ export function AvatarDropZone({
         setIsUploading(false);
       }
     },
-    [personaId, onChange, t],
+    [onChange, t],
+  );
+
+  /** Save a file selected via the native file picker (has a path). */
+  const processPath = useCallback(
+    async (filePath: string) => {
+      setError(null);
+
+      const ext = filePath.split(".").pop()?.toLowerCase();
+      if (!ext || !IMAGE_EXTENSIONS.includes(ext)) {
+        setError(t("avatar.unsupportedType"));
+        return;
+      }
+
+      setIsUploading(true);
+      try {
+        onChange({ type: "url", value: filePathToFileUrl(filePath) });
+      } catch (err) {
+        console.error("Failed to save avatar:", err);
+        setError(t("avatar.saveFailed"));
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [onChange, t],
   );
 
   // Standard HTML5 drag-and-drop (works when dragDropEnabled is false)
@@ -121,22 +160,24 @@ export function AvatarDropZone({
     [disabled, processFile, onChange],
   );
 
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback(async () => {
     if (disabled || isUploading) return;
-    fileInputRef.current?.click();
-  }, [disabled, isUploading]);
 
-  const handleFileInputChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) {
-        return;
-      }
-      void processFile(file);
-      event.target.value = "";
-    },
-    [processFile],
-  );
+    const selected = await open({
+      title: t("avatar.chooseDialogTitle"),
+      filters: [
+        {
+          name: t("avatar.dialogFilterName"),
+          extensions: IMAGE_EXTENSIONS,
+        },
+      ],
+      multiple: false,
+    });
+
+    if (selected) {
+      processPath(selected);
+    }
+  }, [disabled, isUploading, processPath, t]);
 
   const handleClear = useCallback(
     (e: React.MouseEvent) => {
@@ -183,13 +224,6 @@ export function AvatarDropZone({
             </div>
           )}
         </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={IMAGE_EXTENSIONS.map((ext) => `.${ext}`).join(",")}
-          className="hidden"
-          onChange={handleFileInputChange}
-        />
 
         {/* Clear button */}
         {avatar && !disabled && (

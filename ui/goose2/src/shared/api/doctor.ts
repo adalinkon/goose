@@ -1,4 +1,4 @@
-import { fetchJson } from "./gooseServeHttp";
+import { invoke } from "@tauri-apps/api/core";
 
 export type FixType = "command" | "bridge";
 
@@ -20,15 +20,12 @@ export interface DoctorReport {
 }
 
 export async function runDoctor(): Promise<DoctorReport> {
-  return fetchJson<DoctorReport>("/doctor/run", { method: "POST" });
+  return invoke("run_doctor");
 }
 
 export async function runDoctorFix(
   checkId: string,
   fixType: FixType,
 ): Promise<void> {
-  await fetchJson("/doctor/fix", {
-    method: "POST",
-    body: { checkId, fixType },
-  });
+  return invoke("run_doctor_fix", { checkId, fixType });
 }

@@ -1,7 +1,4 @@
-import {
-  getActiveBackendServerAuth,
-  getActiveBackendServerUrl,
-} from "./backendConfig";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface GooseServeHostInfo {
   // Rename to baseUrl when goose serve supports a secure local origin.
@@ -9,24 +6,6 @@ export interface GooseServeHostInfo {
   secretKey: string;
 }
 
-function wsToHttpBaseUrl(wsUrl: string): string {
-  const parsed = new URL(wsUrl);
-  const protocol = parsed.protocol === "wss:" ? "https:" : "http:";
-  const pathname = parsed.pathname.replace(/\/+$/, "");
-  const pathPrefix = pathname.endsWith("/acp")
-    ? pathname.slice(0, -4)
-    : pathname;
-  return `${protocol}//${parsed.host}${pathPrefix}`;
-}
-
 export async function getGooseServeHostInfo(): Promise<GooseServeHostInfo> {
-  const wsUrl = getActiveBackendServerUrl();
-  if (!wsUrl) {
-    throw new Error("No backend URL configured");
-  }
-  const secretKey = getActiveBackendServerAuth()?.token ?? "";
-  return {
-    httpBaseUrl: wsToHttpBaseUrl(wsUrl),
-    secretKey,
-  };
+  return invoke<GooseServeHostInfo>("get_goose_serve_host_info");
 }

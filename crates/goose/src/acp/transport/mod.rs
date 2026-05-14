@@ -109,6 +109,10 @@ async fn check_secret_key(
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    if request.method() == Method::OPTIONS {
+        return Ok(next.run(request).await);
+    }
+
     if matches!(request.uri().path(), "/health" | "/status") {
         return Ok(next.run(request).await);
     }

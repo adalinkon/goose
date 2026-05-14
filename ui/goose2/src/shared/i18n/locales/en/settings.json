@@ -1,4 +1,5 @@
 {
+  "navigationLabel": "Settings navigation",
   "about": {
     "buildModes": {
       "development": "Development",
@@ -14,17 +15,6 @@
     },
     "unavailable": "Not available",
     "title": "About"
-  },
-  "backend": {
-    "title": "Backend",
-    "description": "Connect Goose2 to a custom goose backend endpoint.",
-    "urlLabel": "Backend URL",
-    "urlPlaceholder": "127.0.0.1:3284",
-    "test": "Test connection",
-    "saved": "Backend URL saved.",
-    "cleared": "Custom backend URL cleared.",
-    "connected": "Connected to backend.",
-    "connectFailed": "Failed to connect to backend."
   },
   "appearance": {
     "accent": {
@@ -353,6 +343,14 @@
       "loading": "Loading provider catalog..."
     },
     "disconnect": "Disconnect",
+    "errors": {
+      "fieldRequired": "Enter a value for {{label}}",
+      "fieldsMissing": "Fill in {{fields}}",
+      "loadFailed": "Failed to load provider settings",
+      "removeFailed": "Failed to remove",
+      "saveFailed": "Failed to save",
+      "signInFailed": "Failed to complete sign-in"
+    },
     "models": {
       "description": "AI models power your agents. Goose requires one to work, but some agents bring their own.",
       "notSet": "Not set",

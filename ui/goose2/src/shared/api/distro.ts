@@ -1,6 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { DistroBundleInfo } from "@/shared/types/distro";
-import { fetchJson } from "./gooseServeHttp";
 
 export async function getDistroBundle(): Promise<DistroBundleInfo> {
-  return fetchJson<DistroBundleInfo>("/doctor/distro");
+  return invoke("get_distro_bundle");
 }

@@ -1,5 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
 import { getClient } from "@/shared/api/acpConnection";
-import { fetchJson } from "@/shared/api/gooseServeHttp";
 
 export interface ProjectInfo {
   id: string;
@@ -124,20 +124,11 @@ export async function listProjects(): Promise<ProjectInfo[]> {
 export async function scanProjectIcons(
   workingDirs: string[],
 ): Promise<ProjectIconCandidate[]> {
-  const response = await fetchJson<{ icons: ProjectIconCandidate[] }>(
-    "/fs/project-icons/scan",
-    {
-      method: "POST",
-      body: { workingDirs },
-    },
-  );
-  return response.icons ?? [];
+  return invoke("scan_project_icons", { workingDirs });
 }
 
 export async function readProjectIcon(path: string): Promise<ProjectIconData> {
-  return fetchJson<ProjectIconData>("/fs/project-icons/read", {
-    query: { path },
-  });
+  return invoke("read_project_icon", { path });
 }
 
 export async function createProject(
