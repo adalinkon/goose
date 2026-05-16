@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, FolderOpen } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
@@ -30,8 +30,6 @@ interface ToolCallAdapterProps {
   result?: string;
   structuredContent?: unknown;
   isError?: boolean;
-  /** Epoch ms when the tool call started executing. */
-  startedAt?: number;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /** When false, the chevron-side status badge is hidden (used inside chains). */
@@ -40,24 +38,6 @@ interface ToolCallAdapterProps {
   showChevron?: boolean;
   /** When true, the card sizes to its content rather than filling its parent. */
   fitWidth?: boolean;
-}
-
-function useElapsedTime(status: ToolCallStatus, startedAt?: number) {
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    if (status === "in_progress") {
-      const origin = startedAt ?? Date.now();
-      setElapsed(Math.floor((Date.now() - origin) / 1000));
-      const interval = setInterval(() => {
-        setElapsed(Math.floor((Date.now() - origin) / 1000));
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-    setElapsed(0);
-  }, [status, startedAt]);
-
-  return elapsed;
 }
 
 function getLocationKind(path: string): "file" | "folder" | "path" {
@@ -267,7 +247,6 @@ export function ToolCallAdapter({
   result,
   structuredContent,
   isError,
-  startedAt,
   open,
   onOpenChange,
   showStatusBadge = true,
@@ -275,14 +254,11 @@ export function ToolCallAdapter({
   fitWidth = false,
 }: ToolCallAdapterProps) {
   const { t } = useTranslation("chat");
-  const elapsed = useElapsedTime(status, startedAt);
   const state = toolStatusMap[status];
   const summaryRows = useMemo(
     () => getToolInputSummaryRows({ name, arguments: args }),
     [args, name],
   );
-  const elapsedSeconds =
-    status === "in_progress" && elapsed >= 3 ? elapsed : undefined;
 
   const { resolveMarkdownHref, openResolvedPath } = useArtifactPolicyContext();
 
@@ -380,7 +356,6 @@ export function ToolCallAdapter({
           showChevron={showChevron}
           splitTrigger={canOpenHeaderFile}
           layout={fitWidth ? "fit" : "fill"}
-          elapsedSeconds={elapsedSeconds}
         />
         <ToolContent>
           {showCombinedSurface ? (

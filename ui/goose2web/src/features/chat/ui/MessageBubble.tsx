@@ -340,7 +340,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   if (role === "system") {
     return (
-      <div className="flex justify-center px-4 py-2">
+      <div className="flex justify-center px-4 py-1.5">
         <div className="w-full max-w-md text-center text-xs text-muted-foreground">
           {content.map((c, i) =>
             renderContentBlock(c, i, {
@@ -387,7 +387,7 @@ export const MessageBubble = memo(function MessageBubble({
   return (
     <div
       className={cn(
-        "flex px-4 py-1",
+        "flex px-4 py-0.5",
         "animate-in fade-in duration-200 motion-reduce:animate-none",
         isUser ? "ml-auto flex-row-reverse gap-3" : "flex-row",
       )}
@@ -395,7 +395,7 @@ export const MessageBubble = memo(function MessageBubble({
     >
       <div
         className={cn(
-          "group relative min-w-0 flex flex-col gap-1 pb-8",
+          "group relative min-w-0 flex flex-col gap-1 pb-6",
           isUser
             ? "max-w-[640px] items-end"
             : hasMcpApp
@@ -433,7 +433,7 @@ export const MessageBubble = memo(function MessageBubble({
         <div
           className={cn(
             "w-full min-w-0 text-sm leading-relaxed",
-            isUser && "rounded-2xl bg-muted p-3",
+            isUser && "rounded-2xl bg-muted px-3 py-2.5",
           )}
           onClick={handleContentClick}
         >

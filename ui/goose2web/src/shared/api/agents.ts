@@ -1,39 +1,202 @@
+import type { SourceEntry } from "@aaif/goose-sdk";
 import type {
   Persona,
   CreatePersonaRequest,
   UpdatePersonaRequest,
+  Avatar,
 } from "@/shared/types/agents";
-import { fetchJson } from "./gooseServeHttp";
+import { getClient } from "./acpConnection";
+
+const AGENT_SOURCE_TYPE = "agent" as const;
+
+function decodeBytes(fileBytes: number[]): string {
+  return new TextDecoder().decode(Uint8Array.from(fileBytes));
+}
+
+function isAvatar(value: unknown): value is Avatar {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { type?: unknown; value?: unknown };
+  return candidate.type === "url" && typeof candidate.value === "string";
+}
+
+function toAvatar(value: unknown): Avatar | null {
+  if (isAvatar(value)) return value;
+  if (typeof value === "string") return { type: "url", value };
+  return null;
+}
+
+function toStringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
+}
+
+function toPersona(source: SourceEntry): Persona {
+  const properties = source.properties ?? {};
+  const now = new Date().toISOString();
+
+  return {
+    id: source.path,
+    displayName: source.name,
+    avatar: toAvatar(properties.avatar) ?? undefined,
+    systemPrompt: source.content,
+    provider: toStringOrUndefined(properties.provider),
+    model: toStringOrUndefined(properties.model),
+    isBuiltin: false,
+    isFromDisk: source.writable === false,
+    writable: source.writable ?? true,
+    createdAt: toStringOrUndefined(properties.createdAt) ?? now,
+    updatedAt: toStringOrUndefined(properties.updatedAt) ?? now,
+  };
+}
+
+function toSourceProperties(data: {
+  avatar?: Avatar | null;
+  provider?: string;
+  model?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  if (data.avatar) properties.avatar = data.avatar;
+  if (data.provider) properties.provider = data.provider;
+  if (data.model) properties.model = data.model;
+  if (data.createdAt) properties.createdAt = data.createdAt;
+  if (data.updatedAt) properties.updatedAt = data.updatedAt;
+  return properties;
+}
+
+async function listAgentSources(): Promise<SourceEntry[]> {
+  const client = await getClient();
+  const response = await client.goose.GooseSourcesList({
+    type: AGENT_SOURCE_TYPE,
+  });
+  return response.sources.filter((entry) => entry.type === AGENT_SOURCE_TYPE);
+}
+
+async function getAgentSourceByPath(path: string): Promise<SourceEntry> {
+  const sources = await listAgentSources();
+  const source = sources.find((entry) => entry.path === path);
+  if (!source) {
+    throw new Error(`Persona not found: ${path}`);
+  }
+  return source;
+}
+
+function normalizePersonaImportPayload(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  return [payload];
+}
+
+function normalizeLegacyPersonaPayload(payload: unknown): string {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid persona import payload");
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  const hasSourceShape =
+    typeof candidate.version === "number" &&
+    typeof candidate.type === "string" &&
+    typeof candidate.name === "string";
+  if (hasSourceShape) {
+    return JSON.stringify(candidate);
+  }
+
+  const displayName = toStringOrUndefined(candidate.displayName);
+  const systemPrompt = toStringOrUndefined(candidate.systemPrompt);
+  if (!displayName || !systemPrompt) {
+    throw new Error("Invalid persona import payload");
+  }
+
+  const legacyExport = {
+    version: 1,
+    type: AGENT_SOURCE_TYPE,
+    name: displayName,
+    description: "",
+    content: systemPrompt,
+    properties: toSourceProperties({
+      avatar: toAvatar(candidate.avatar),
+      provider: toStringOrUndefined(candidate.provider),
+      model: toStringOrUndefined(candidate.model),
+      createdAt: toStringOrUndefined(candidate.createdAt),
+      updatedAt: toStringOrUndefined(candidate.updatedAt),
+    }),
+  };
+
+  return JSON.stringify(legacyExport);
+}
 
 export async function listPersonas(): Promise<Persona[]> {
-  return fetchJson<Persona[]>("/personas");
+  const sources = await listAgentSources();
+  return sources.map(toPersona);
 }
 
 export async function createPersona(
   request: CreatePersonaRequest,
 ): Promise<Persona> {
-  return fetchJson<Persona>("/personas", {
-    method: "POST",
-    body: request,
+  const client = await getClient();
+  const now = new Date().toISOString();
+  const response = await client.goose.GooseSourcesCreate({
+    type: AGENT_SOURCE_TYPE,
+    name: request.displayName,
+    description: "",
+    content: request.systemPrompt,
+    global: true,
+    properties: toSourceProperties({
+      avatar: request.avatar,
+      provider: request.provider,
+      model: request.model,
+      createdAt: now,
+      updatedAt: now,
+    }),
   });
+  return toPersona(response.source);
 }
 
 export async function updatePersona(
   id: string,
   request: UpdatePersonaRequest,
 ): Promise<Persona> {
-  return fetchJson<Persona>(`/personas/${id}`, {
-    method: "PUT",
-    body: request,
+  const source = await getAgentSourceByPath(id);
+  const properties = source.properties ?? {};
+  const response = await (await getClient()).goose.GooseSourcesUpdate({
+    type: AGENT_SOURCE_TYPE,
+    path: source.path,
+    name: request.displayName ?? source.name,
+    description: source.description,
+    content: request.systemPrompt ?? source.content,
+    properties: {
+      ...properties,
+      ...toSourceProperties({
+        avatar:
+          request.avatar === undefined
+            ? toAvatar(properties.avatar)
+            : request.avatar,
+        provider:
+          request.provider === undefined
+            ? toStringOrUndefined(properties.provider)
+            : request.provider,
+        model:
+          request.model === undefined
+            ? toStringOrUndefined(properties.model)
+            : request.model,
+        createdAt: toStringOrUndefined(properties.createdAt),
+        updatedAt: new Date().toISOString(),
+      }),
+    },
   });
+  return toPersona(response.source);
 }
 
 export async function deletePersona(id: string): Promise<void> {
-  await fetchJson(`/personas/${id}`, { method: "DELETE" });
+  await (await getClient()).goose.GooseSourcesDelete({
+    type: AGENT_SOURCE_TYPE,
+    path: id,
+  });
 }
 
 export async function refreshPersonas(): Promise<Persona[]> {
-  return fetchJson<Persona[]>("/personas/refresh", { method: "POST" });
+  return listPersonas();
 }
 
 export interface ExportResult {
@@ -42,17 +205,37 @@ export interface ExportResult {
 }
 
 export async function exportPersona(id: string): Promise<ExportResult> {
-  return fetchJson<ExportResult>(`/personas/${id}/export`);
+  const response = await (await getClient()).goose.GooseSourcesExport({
+    type: AGENT_SOURCE_TYPE,
+    path: id,
+  });
+  return {
+    json: response.json,
+    suggestedFilename: response.filename,
+  };
 }
 
 export async function importPersonas(
   fileBytes: number[],
-  fileName: string,
+  _fileName: string,
 ): Promise<Persona[]> {
-  return fetchJson<Persona[]>("/personas/import", {
-    method: "POST",
-    body: { fileBytes, fileName },
-  });
+  const decoded = decodeBytes(fileBytes);
+  const parsed = JSON.parse(decoded) as unknown;
+  const payloads = normalizePersonaImportPayload(parsed);
+  const client = await getClient();
+  const importedSources: SourceEntry[] = [];
+
+  for (const payload of payloads) {
+    const response = await client.goose.GooseSourcesImport({
+      data: normalizeLegacyPersonaPayload(payload),
+      global: true,
+    });
+    importedSources.push(...response.sources);
+  }
+
+  return importedSources
+    .filter((source) => source.type === AGENT_SOURCE_TYPE)
+    .map(toPersona);
 }
 
 export interface ImportFileReadResult {
@@ -86,30 +269,29 @@ export async function readImportPersonaFile(
 }
 
 export async function savePersonaAvatar(
-  personaId: string,
-  sourcePath: string,
+  _personaId: string,
+  _sourcePath: string,
 ): Promise<string> {
-  const response = await fetchJson<{ filename: string }>(
-    "/personas/avatar/save-path",
-    {
-      method: "POST",
-      body: { personaId, sourcePath },
-    },
+  throw new Error(
+    "Avatar file-path upload is not supported via ACP. Use savePersonaAvatarBytes instead.",
   );
-  return response.filename;
 }
 
 export async function savePersonaAvatarBytes(
-  personaId: string,
+  _personaId: string,
   bytes: number[],
   extension: string,
 ): Promise<string> {
-  const response = await fetchJson<{ filename: string }>(
-    "/personas/avatar/save-bytes",
-    {
-      method: "POST",
-      body: { personaId, bytes, extension },
-    },
-  );
-  return response.filename;
+  const mimeExtension = extension.toLowerCase().replace(/^\./, "");
+  const mimeType = mimeExtension === "jpg" ? "jpeg" : mimeExtension || "png";
+  const binary = Uint8Array.from(bytes);
+  let base64: string;
+  if (typeof Buffer !== "undefined") {
+    base64 = Buffer.from(binary).toString("base64");
+  } else {
+    let binaryString = "";
+    for (const byte of binary) binaryString += String.fromCharCode(byte);
+    base64 = btoa(binaryString);
+  }
+  return `data:image/${mimeType};base64,${base64}`;
 }

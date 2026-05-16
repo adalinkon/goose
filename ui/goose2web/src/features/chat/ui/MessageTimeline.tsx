@@ -321,7 +321,7 @@ export function MessageTimeline({
       aria-label={t("timeline.ariaLabel")}
       aria-live="polite"
     >
-      <div className="mx-auto max-w-3xl py-4">
+      <div className="mx-auto max-w-3xl py-2">
         {visibleMessages.map((message, index) => {
           const prev = index > 0 ? visibleMessages[index - 1] : null;
           const showDateSeparator =
@@ -334,14 +334,14 @@ export function MessageTimeline({
                 messageRefs.current[message.id] = el;
               }}
               className={cn(
-                index === 0 ? "mt-0" : "mt-4",
+                index === 0 ? "mt-0" : "mt-2",
                 "rounded-xl transition-[background-color,box-shadow]",
                 pulsingMessageId === message.id &&
                   "bg-accent/25 ring-2 ring-accent/35 ring-inset",
               )}
             >
               {showDateSeparator && (
-                <div className="my-4 px-4 text-center">
+                <div className="my-2 px-4 text-center">
                   <span className="text-[11px] font-medium text-muted-foreground">
                     {formatDateSeparator(
                       message.created,

@@ -242,7 +242,6 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
               result={response?.result}
               structuredContent={response?.structuredContent}
               isError={response?.isError}
-              startedAt={request?.startedAt}
               open={isOpen}
               onOpenChange={(open) => handleOpenChange(item.key, open)}
               showChevron={false}
@@ -272,7 +271,6 @@ export function ToolChainCards({ toolItems }: { toolItems: ToolChainItem[] }) {
             result={response?.result}
             structuredContent={response?.structuredContent}
             isError={response?.isError}
-            startedAt={request?.startedAt}
             open={isOpen}
             onOpenChange={(open) => handleOpenChange(item.key, open)}
             showStatusBadge={false}

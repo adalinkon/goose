@@ -37,7 +37,7 @@ export function PageShell({
       <div className="min-h-0 flex-1 overflow-y-scroll [scrollbar-gutter:stable]">
         <div
           className={cn(
-            "mx-auto flex w-full flex-col gap-8 px-6 py-8 page-transition",
+            "mx-auto flex w-full flex-col gap-8 px-6 py-6 page-transition",
             widthClassName,
             contentClassName,
           )}
@@ -62,7 +62,7 @@ export function DetailPageShell({
       <div className="min-h-0 flex-1 overflow-y-scroll [scrollbar-gutter:stable]">
         <div
           className={cn(
-            "mx-auto flex w-full flex-col gap-8 px-6 py-8 page-transition",
+            "mx-auto flex w-full flex-col gap-8 px-6 py-6 page-transition",
             widthClassName,
             contentClassName,
           )}

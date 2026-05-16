@@ -14,7 +14,7 @@ interface SettingsViewProps {
 
 export function SettingsView({ activeSection }: SettingsViewProps) {
   return (
-    <PageShell contentWidth="narrow" contentClassName="gap-0">
+    <PageShell contentClassName="gap-0">
       {activeSection === "providers" && <ProvidersSettings />}
       {activeSection === "voice" && <VoiceInputSettings />}
       {activeSection === "doctor" && <DoctorSettings />}

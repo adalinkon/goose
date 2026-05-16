@@ -8,7 +8,7 @@ import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
 import { ContextPanel } from "./ContextPanel";
 
-const CP_PAD = 12;
+const CP_PAD = 0;
 const CP_TOTAL_W = 340 + CP_PAD * 2;
 const CP_TOGGLE_RIGHT = CP_PAD + 12;
 const CP_TOGGLE_TOP = CP_PAD + 10;
@@ -73,7 +73,7 @@ export function ChatContextPanel({
               className={cn(
                 "flex",
                 isCompactViewport
-                  ? "absolute bottom-3 right-3 top-12 z-10 w-[min(340px,calc(100%-1.5rem))]"
+                  ? "absolute bottom-0 right-0 top-0 z-10 w-[min(340px,calc(100%-1.5rem))]"
                   : "h-full",
               )}
               style={
@@ -91,7 +91,7 @@ export function ChatContextPanel({
             >
               <aside
                 className={cn(
-                  "flex min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-background",
+                  "flex min-w-0 flex-1 overflow-hidden border-l border-border bg-background",
                   isCompactViewport && "shadow-modal",
                 )}
               >

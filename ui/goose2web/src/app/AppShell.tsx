@@ -11,7 +11,6 @@ import {
   type SectionId,
 } from "@/features/settings/ui/settingsSections";
 import { OPEN_SETTINGS_EVENT } from "@/features/settings/lib/settingsEvents";
-import { TopBar } from "./ui/TopBar";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import { selectMessagesBySession } from "@/features/chat/stores/chatSelectors";
 import {
@@ -60,7 +59,7 @@ export type AppView =
   | "session-history"
   | "settings";
 
-const SIDEBAR_OUTER_GUTTER_WIDTH = 12;
+const SIDEBAR_OUTER_GUTTER_WIDTH = 0;
 const SIDEBAR_RESIZE_HANDLE_WIDTH = 12;
 const SIDEBAR_DEFAULT_WIDTH = SIDE_PANEL_DEFAULT_WIDTH;
 const SIDEBAR_MIN_WIDTH = 220;
@@ -798,12 +797,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
-      <TopBar />
-
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div
-          className="flex-shrink-0 h-full py-3 pl-3"
+          className="flex-shrink-0 h-full"
           style={{
             width: sidebarCollapsed
               ? SIDEBAR_COLLAPSED_WIDTH + SIDEBAR_OUTER_GUTTER_WIDTH
@@ -839,7 +836,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             activeSettingsSection={activeSettingsSection}
             activeSessionId={activeSessionId}
             projects={projects}
-            className="h-full rounded-xl"
+            className="h-full"
           />
         </div>
 

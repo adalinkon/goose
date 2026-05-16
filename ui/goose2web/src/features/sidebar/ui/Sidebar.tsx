@@ -392,10 +392,10 @@ export function Sidebar({
       )}
       style={{ width: collapsed ? 54 : width }}
     >
-      <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background">
+      <div className="flex h-full flex-col overflow-hidden border-r border-border bg-background">
         <div
           className={cn(
-            "flex-shrink-0 pt-3",
+            "flex-shrink-0 pt-2",
             collapsed ? "px-1.5 pb-1.5" : "px-3 pb-1",
           )}
         >
