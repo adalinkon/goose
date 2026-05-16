@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Stethoscope,
   X,
+  FileText,
 } from "lucide-react";
 import { IconPlug } from "@tabler/icons-react";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -23,6 +24,7 @@ import { CompactionSettings } from "./CompactionSettings";
 import { ProjectsSettings } from "./ProjectsSettings";
 import { ChatsSettings } from "./ChatsSettings";
 import { AboutSettings } from "./AboutSettings";
+import { PromptsSettings } from "./PromptsSettings";
 
 const NAV_ITEMS = [
   { id: "appearance", labelKey: "nav.appearance", icon: Palette },
@@ -32,6 +34,7 @@ const NAV_ITEMS = [
   { id: "general", labelKey: "nav.general", icon: Settings2 },
   { id: "projects", labelKey: "nav.projects", icon: FolderKanban },
   { id: "chats", labelKey: "nav.chats", icon: MessageSquare },
+  { id: "prompts", labelKey: "nav.prompts", icon: FileText },
   { id: "doctor", labelKey: "nav.doctor", icon: Stethoscope },
   { id: "about", labelKey: "nav.about", icon: Info },
 ] as const;
@@ -177,6 +180,7 @@ export function SettingsModal({
               {activeSection === "general" && <GeneralSettings />}
               {activeSection === "projects" && <ProjectsSettings />}
               {activeSection === "chats" && <ChatsSettings />}
+              {activeSection === "prompts" && <PromptsSettings />}
               {activeSection === "about" && <AboutSettings />}
             </div>
           </div>

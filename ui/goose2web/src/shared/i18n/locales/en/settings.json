@@ -221,6 +221,7 @@
       "deleteError": "Failed to delete."
     }
   },
+  "navigationLabel": "Settings navigation",
   "nav": {
     "about": "About",
     "appearance": "Appearance",
@@ -228,9 +229,30 @@
     "compaction": "Compaction",
     "doctor": "Doctor",
     "general": "General",
+    "prompts": "Prompts",
     "projects": "Projects",
     "providers": "Providers",
     "voice": "Voice"
+  },
+  "prompts": {
+    "title": "Prompts",
+    "description": "Review and customize built-in backend prompt templates.",
+    "loading": "Loading prompt templates...",
+    "loadingPrompt": "Loading prompt...",
+    "empty": "No prompt templates available.",
+    "customized": "Custom",
+    "editorLabel": "Prompt editor for {{name}}",
+    "saving": "Saving...",
+    "saved": "Prompt saved.",
+    "resetAction": "Reset",
+    "resetting": "Resetting...",
+    "reset": "Prompt reset to default.",
+    "errors": {
+      "loadFailed": "Failed to load prompt templates.",
+      "loadPromptFailed": "Failed to load prompt.",
+      "saveFailed": "Failed to save prompt.",
+      "resetFailed": "Failed to reset prompt."
+    }
   },
   "projects": {
     "empty": "No archived projects.",

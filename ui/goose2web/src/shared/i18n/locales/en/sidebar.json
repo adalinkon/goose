@@ -1,5 +1,6 @@
 {
   "actions": {
+    "backToMainNavigation": "Back to main navigation",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "newChat": "New chat",
@@ -11,6 +12,7 @@
     "optionsFor": "Options for {{label}}"
   },
   "navigation": {
+    "main": "Main navigation",
     "agents": "Agents",
     "extensions": "Extensions",
     "home": "Home",

@@ -221,6 +221,7 @@
       "deleteError": "Error al eliminar."
     }
   },
+  "navigationLabel": "Navegación de ajustes",
   "nav": {
     "about": "Acerca de",
     "appearance": "Apariencia",
@@ -228,9 +229,30 @@
     "compaction": "Compactación",
     "doctor": "Diagnóstico",
     "general": "General",
+    "prompts": "Prompts",
     "projects": "Proyectos",
     "providers": "Proveedores",
     "voice": "Voz"
+  },
+  "prompts": {
+    "title": "Prompts",
+    "description": "Revisa y personaliza las plantillas de prompts integradas del backend.",
+    "loading": "Cargando plantillas de prompt...",
+    "loadingPrompt": "Cargando prompt...",
+    "empty": "No hay plantillas de prompt disponibles.",
+    "customized": "Personalizado",
+    "editorLabel": "Editor de prompt para {{name}}",
+    "saving": "Guardando...",
+    "saved": "Prompt guardado.",
+    "resetAction": "Restablecer",
+    "resetting": "Restableciendo...",
+    "reset": "Prompt restablecido al valor predeterminado.",
+    "errors": {
+      "loadFailed": "No se pudieron cargar las plantillas de prompt.",
+      "loadPromptFailed": "No se pudo cargar el prompt.",
+      "saveFailed": "No se pudo guardar el prompt.",
+      "resetFailed": "No se pudo restablecer el prompt."
+    }
   },
   "projects": {
     "empty": "No hay proyectos archivados.",
