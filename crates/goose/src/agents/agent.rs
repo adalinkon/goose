@@ -761,7 +761,7 @@ impl Agent {
     #[instrument(skip(self, tool_call, request_id, cancellation_token, session), fields(input, output, session.id = %session.id))]
     pub async fn dispatch_tool_call(
         &self,
-        tool_call: CallToolRequestParams,
+        mut tool_call: CallToolRequestParams,
         request_id: String,
         cancellation_token: Option<CancellationToken>,
         session: &Session,
@@ -791,9 +791,38 @@ impl Agent {
                             .map(|a| serde_json::Value::Object(a.clone())),
                     )
                     .with_working_dir(session.working_dir.to_string_lossy().to_string());
-            self.hook_manager
-                .emit(crate::hooks::HookEvent::PreToolUse, ctx)
+            let outputs = self
+                .hook_manager
+                .run_hooks_with_output(crate::hooks::HookEvent::PreToolUse, ctx)
                 .await;
+
+            for output in outputs {
+                if output.exit_code != Some(0) {
+                    warn!(
+                        exit_code = ?output.exit_code,
+                        stderr = %output.stderr.trim(),
+                        "PreToolUse hook exited unsuccessfully",
+                    );
+                    continue;
+                }
+
+                let stdout = output.stdout.trim();
+                if stdout.is_empty() {
+                    continue;
+                }
+
+                match serde_json::from_str::<crate::hooks::PreToolUseHookOutput>(stdout) {
+                    Ok(parsed) => {
+                        if let Some(updated_input) = parsed.updated_input {
+                            tool_call.arguments = Some(updated_input);
+                        }
+                    }
+                    Err(err) => warn!(
+                        error = %err,
+                        "Failed to parse PreToolUse hook output",
+                    ),
+                }
+            }
         }
 
         if tool_call.name == PLATFORM_MANAGE_SCHEDULE_TOOL_NAME {
