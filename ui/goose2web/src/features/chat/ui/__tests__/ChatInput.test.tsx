@@ -139,6 +139,18 @@ describe("ChatInput", () => {
     expect(input).toHaveValue("hello");
   });
 
+  it("does not call onSend when Enter is pressed during IME composition", () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
+
+    const input = screen.getByRole("textbox");
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.compositionEnd(input);
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("shows current model name in model picker", () => {
     render(
       <ChatInput

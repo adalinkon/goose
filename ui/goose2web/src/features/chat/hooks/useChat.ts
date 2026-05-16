@@ -35,6 +35,21 @@ const EMPTY_MESSAGES: Message[] = [];
 type CompactConversationResult = "completed" | "failed" | "skipped";
 type EnsurePrepared = (personaId?: string) => Promise<boolean | undefined>;
 
+function summarizeAttachmentKinds(attachments?: ChatAttachmentDraft[]) {
+  if (!attachments || attachments.length === 0) {
+    return "none";
+  }
+
+  return attachments
+    .map((attachment) => {
+      if (attachment.kind === "image") {
+        return `image:${attachment.mimeType}:${attachment.base64.length}`;
+      }
+      return attachment.kind;
+    })
+    .join(",");
+}
+
 function createCompactionConfirmationMessage() {
   return createSystemNotificationMessage(
     i18n.t("chat:notifications.compactionComplete"),
@@ -180,7 +195,7 @@ export function useChat(
       )
         return;
       perfLog(
-        `[perf:send] ${sid} useChat.sendMessage start (textLen=${text.length}, attachments=${attachments?.length ?? 0})`,
+        `[perf:send] ${sid} useChat.sendMessage start (textLen=${text.length}, attachments=${attachments?.length ?? 0}, imgs=${images?.length ?? 0}, attachmentKinds=${summarizeAttachmentKinds(attachments)})`,
       );
 
       const effectivePersonaInfo = resolvePersonaInfo(

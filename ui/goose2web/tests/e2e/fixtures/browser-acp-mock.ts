@@ -148,6 +148,43 @@ export function buildInitScript(options?: {
         },
       });
 
+      const personaToSourceEntry = (p) => ({
+        type: "agent",
+        name: p.displayName ?? p.name,
+        description: "Agent",
+        content: p.systemPrompt ?? p.content ?? "",
+        path: p.id ?? "/mock/.agents/agents/" + (p.displayName ?? p.name ?? "agent"),
+        global: true,
+        writable: p.writable ?? !p.isBuiltin,
+        supportingFiles: [],
+        properties: {
+          provider: p.provider,
+          model: p.model,
+          avatar:
+            typeof p.avatar === "string"
+              ? p.avatar
+              : p.avatar && typeof p.avatar === "object"
+                ? p.avatar.value
+                : undefined,
+        },
+      });
+
+      const sourceEntryToPersona = (source) => ({
+        id: source.path,
+        displayName: source.name,
+        avatar: source.properties?.avatar
+          ? { type: "url", value: source.properties.avatar }
+          : null,
+        systemPrompt: source.content,
+        provider: source.properties?.provider,
+        model: source.properties?.model,
+        isBuiltin: source.writable === false,
+        isFromDisk: source.writable !== false,
+        writable: source.writable !== false,
+        createdAt: "",
+        updatedAt: "",
+      });
+
       function nowIso() {
         return new Date().toISOString();
       }
@@ -229,6 +266,99 @@ export function buildInitScript(options?: {
           }
           case "_goose/providers/list":
             return jsonRpcResult(message.id, { entries: PROVIDER_INVENTORY });
+          case "_goose/sources/list": {
+            const type = message.params?.type;
+            if (type === "agent") {
+              return jsonRpcResult(message.id, {
+                sources: ACP_PERSONAS.map(personaToSourceEntry),
+              });
+            }
+            if (type === "skill") {
+              return jsonRpcResult(message.id, {
+                sources: SKILLS.map(skillToSourceEntry),
+              });
+            }
+            if (type === "project") {
+              return jsonRpcResult(message.id, {
+                sources: PROJECTS.map(projectToSourceEntry),
+              });
+            }
+            return jsonRpcResult(message.id, { sources: [] });
+          }
+          case "_goose/sources/create": {
+            if (message.params?.type !== "agent") {
+              return jsonRpcResult(message.id, {
+                source: {
+                  type: message.params?.type,
+                  name: message.params?.name,
+                  description: message.params?.description ?? "",
+                  content: message.params?.content ?? "",
+                  path: "/mock/source-" + Math.random().toString(36).slice(2, 10),
+                  global: message.params?.global ?? true,
+                  writable: true,
+                  properties: message.params?.properties ?? {},
+                },
+              });
+            }
+            const source = {
+              type: "agent",
+              name: message.params?.name ?? "New Agent",
+              description: message.params?.description ?? "Agent",
+              content: message.params?.content ?? "",
+              path: "mock-" + Math.random().toString(36).slice(2, 10),
+              global: true,
+              writable: true,
+              supportingFiles: [],
+              properties: message.params?.properties ?? {},
+            };
+            ACP_PERSONAS.unshift(sourceEntryToPersona(source));
+            return jsonRpcResult(message.id, { source });
+          }
+          case "_goose/sources/update": {
+            const index = ACP_PERSONAS.findIndex((persona) => persona.id === message.params?.path);
+            if (index < 0) {
+              return jsonRpcResult(message.id, {
+                source: {
+                  type: "agent",
+                  name: message.params?.name ?? "Missing Agent",
+                  description: message.params?.description ?? "Agent",
+                  content: message.params?.content ?? "",
+                  path: message.params?.path ?? "missing",
+                  global: true,
+                  writable: true,
+                  supportingFiles: [],
+                  properties: message.params?.properties ?? {},
+                },
+              });
+            }
+            const source = {
+              ...personaToSourceEntry(ACP_PERSONAS[index]),
+              name: message.params?.name ?? ACP_PERSONAS[index].displayName,
+              description: message.params?.description ?? "Agent",
+              content: message.params?.content ?? ACP_PERSONAS[index].systemPrompt,
+              properties: message.params?.properties ?? {},
+            };
+            ACP_PERSONAS[index] = sourceEntryToPersona(source);
+            return jsonRpcResult(message.id, { source });
+          }
+          case "_goose/sources/delete": {
+            if (message.params?.type === "agent") {
+              const index = ACP_PERSONAS.findIndex((persona) => persona.id === message.params?.path);
+              if (index >= 0) {
+                ACP_PERSONAS.splice(index, 1);
+              }
+            }
+            return jsonRpcResult(message.id, {});
+          }
+          case "_goose/sources/export":
+            return jsonRpcResult(message.id, {
+              json: "{}",
+              filename: "persona.agent.json",
+            });
+          case "_goose/sources/import":
+            return jsonRpcResult(message.id, {
+              sources: ACP_PERSONAS.map(personaToSourceEntry),
+            });
           case "_goose/personas/list":
           case "_goose/personas/refresh":
             return jsonRpcResult(message.id, { personas: ACP_PERSONAS });

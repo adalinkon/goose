@@ -153,7 +153,32 @@ describe("useChat attachments", () => {
     });
   });
 
-  it("includes file/directory paths in the prompt for mixed sends; images flow through ACP image content blocks only", async () => {
+  it("sends pathless browser images through ACP image content blocks", async () => {
+    const { result } = renderHook(() => useChat("session-1"));
+    const attachments = [
+      {
+        id: "image-1",
+        kind: "image" as const,
+        name: "diagram.png",
+        mimeType: "image/png",
+        base64: "abc123",
+        previewUrl: "blob:http://localhost/tmp/diagram.png",
+      },
+    ];
+
+    await act(async () => {
+      await result.current.sendMessage("", undefined, attachments);
+    });
+
+    expect(mockAcpSendMessage).toHaveBeenCalledWith("session-1", " ", {
+      systemPrompt: undefined,
+      personaId: undefined,
+      personaName: undefined,
+      images: [["abc123", "image/png"]],
+    });
+  });
+
+  it("includes file/directory paths in the prompt while sending images as ACP image content blocks only", async () => {
     const { result } = renderHook(() => useChat("session-1"));
     const attachments = [
       {

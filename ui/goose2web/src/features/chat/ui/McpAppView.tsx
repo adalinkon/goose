@@ -93,6 +93,20 @@ function getDeviceCapabilities(): NonNullable<
   };
 }
 
+function buildHostCapabilities(handlers: {
+  onCallTool?: unknown;
+  onOpenLink?: unknown;
+  onReadResource?: unknown;
+  onSendMessage?: unknown;
+}) {
+  return {
+    ...(handlers.onCallTool !== undefined && { serverTools: {} }),
+    ...(handlers.onOpenLink !== undefined && { openLinks: {} }),
+    ...(handlers.onReadResource !== undefined && { serverResources: {} }),
+    ...(handlers.onSendMessage !== undefined && { message: { text: {} } }),
+  };
+}
+
 function buildHostContextToolInfo(payload: McpAppPayload): HostContextToolInfo {
   const tool: HostContextTool = {
     name: payload.tool.name,
@@ -426,6 +440,12 @@ export function McpAppView({
             toolInput={currentToolInput}
             toolResult={currentToolResult}
             hostContext={hostContext}
+            hostCapabilities={buildHostCapabilities({
+              onCallTool: handleCallTool,
+              onOpenLink: handleOpenLink,
+              onReadResource: handleReadResource,
+              onSendMessage,
+            })}
             onOpenLink={handleOpenLink}
             onMessage={handleMessage}
             onCallTool={handleCallTool}

@@ -103,6 +103,7 @@ export function ChatInput({
   );
   const [isCompact, setIsCompact] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isComposingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
@@ -271,6 +272,15 @@ export function ChatInput({
   ]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    const nativeEvent = event.nativeEvent as KeyboardEvent;
+    if (
+      isComposingRef.current ||
+      nativeEvent.isComposing ||
+      nativeEvent.keyCode === 229
+    ) {
+      return;
+    }
+
     if (mentionOpen) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -477,6 +487,12 @@ export function ChatInput({
                   ref={textareaRef}
                   value={text}
                   onChange={handleInput}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true;
+                  }}
+                  onCompositionEnd={() => {
+                    isComposingRef.current = false;
+                  }}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   placeholder={inputPlaceholder}

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   IconArrowLeft,
   IconCheck,
+  IconEdit,
   IconPlus,
   IconSearch,
   IconTrash,
@@ -62,6 +63,9 @@ function readServerItems(): ServerItem[] {
 export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
   const { t } = useTranslation("sidebar");
   const [view, setView] = useState<ServersDialogView>("list");
+  const [editingServerName, setEditingServerName] = useState<string | null>(
+    null,
+  );
   const [search, setSearch] = useState("");
   const [addServerName, setAddServerName] = useState("");
   const [addServerUrl, setAddServerUrl] = useState("");
@@ -91,7 +95,7 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
     });
   }, [search, servers]);
 
-  const canAdd = addServerUrl.trim().length > 0;
+  const canSave = addServerUrl.trim().length > 0;
 
   function deriveServerName(url: string): string {
     try {
@@ -178,11 +182,58 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
     setView("list");
   }
 
+  function handleStartEditServer(server: ServerItem) {
+    setEditingServerName(server.name);
+    setAddServerName(server.name);
+    setAddServerUrl(server.url);
+    setAddUsername(server.auth?.username ?? "");
+    setAddToken(server.auth?.token ?? "");
+    setView("add");
+  }
+
+  function handleSaveServerEdit() {
+    const normalizedUrl = addServerUrl.trim();
+    const normalizedName = addServerName.trim();
+    if (!editingServerName || !normalizedName || !normalizedUrl) {
+      return;
+    }
+
+    if (editingServerName !== normalizedName) {
+      removeBackendServer(editingServerName);
+    }
+    setBackendServer(normalizedName, normalizedUrl);
+    setBackendServerAuth(normalizedName, {
+      username: addUsername.trim(),
+      token: addToken.trim(),
+    });
+    if (activeServerName === editingServerName) {
+      setActiveBackendServerName(normalizedName);
+    }
+
+    setEditingServerName(null);
+    setAddServerName("");
+    setAddServerUrl("");
+    setAddUsername("");
+    setAddToken("");
+    refreshServers();
+    setView("list");
+  }
+
+  function handleBackToList() {
+    setEditingServerName(null);
+    setAddServerName("");
+    setAddServerUrl("");
+    setAddUsername("");
+    setAddToken("");
+    setView("list");
+  }
+
   useEffect(() => {
     if (!open) {
       return;
     }
     setView("list");
+    setEditingServerName(null);
     refreshServers();
     const intervalId = window.setInterval(() => {
       refreshServers();
@@ -207,7 +258,7 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => setView("list")}
+                  onClick={handleBackToList}
                   aria-label={t("servers.back")}
                   title={t("servers.back")}
                 >
@@ -215,7 +266,11 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
                 </Button>
               )}
               <DialogTitle>
-                {view === "add" ? t("servers.addServer") : t("servers.title")}
+                {view === "add"
+                  ? editingServerName
+                    ? t("servers.editServer")
+                    : t("servers.addServer")
+                  : t("servers.title")}
               </DialogTitle>
             </div>
             <DialogClose asChild>
@@ -289,6 +344,16 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
                           type="button"
                           variant="ghost"
                           size="icon-xs"
+                          onClick={() => handleStartEditServer(server)}
+                          aria-label={t("servers.edit")}
+                          title={t("servers.edit")}
+                        >
+                          <IconEdit className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
                           onClick={() => handleRemoveServer(server.name)}
                           aria-label={t("servers.remove")}
                           title={t("servers.remove")}
@@ -305,7 +370,14 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
                 type="button"
                 variant="outline-flat"
                 className="w-fit"
-                onClick={() => setView("add")}
+                onClick={() => {
+                  setEditingServerName(null);
+                  setAddServerName("");
+                  setAddServerUrl("");
+                  setAddUsername("");
+                  setAddToken("");
+                  setView("add");
+                }}
                 leftIcon={<IconPlus />}
               >
                 {t("servers.addServer")}
@@ -369,10 +441,14 @@ export function ServersDialog({ open, onOpenChange }: ServersDialogProps) {
               <Button
                 type="button"
                 className="w-fit"
-                onClick={handleAddServer}
-                disabled={!canAdd}
+                onClick={
+                  editingServerName ? handleSaveServerEdit : handleAddServer
+                }
+                disabled={!canSave}
               >
-                {t("servers.addServer")}
+                {editingServerName
+                  ? t("servers.saveServer")
+                  : t("servers.addServer")}
               </Button>
             </>
           )}

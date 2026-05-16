@@ -4,20 +4,85 @@ import { Camera, X } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { useAvatarSrc } from "@/shared/hooks/useAvatarSrc";
-import { savePersonaAvatarBytes } from "@/shared/api/agents";
 import type { Avatar } from "@/shared/types/agents";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+const MAX_AVATAR_DIMENSION = 512;
+const AVATAR_JPEG_QUALITY = 0.85;
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Avatar file could not be read as a data URL"));
+      }
+    });
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("Avatar file could not be read")),
+    );
+    reader.readAsDataURL(file);
+  });
+}
+
+function resizeAvatarFile(file: File): Promise<string> {
+  if (
+    file.type === "image/svg+xml" ||
+    file.type === "image/gif" ||
+    typeof Image === "undefined"
+  ) {
+    return readFileAsDataUrl(file);
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxDim = Math.max(img.width, img.height);
+      if (maxDim <= MAX_AVATAR_DIMENSION) {
+        resolve(readFileAsDataUrl(file));
+        return;
+      }
+
+      const scale = MAX_AVATAR_DIMENSION / maxDim;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(readFileAsDataUrl(file));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
+      resolve(
+        canvas.toDataURL(
+          outputType,
+          outputType === "image/jpeg" ? AVATAR_JPEG_QUALITY : undefined,
+        ),
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(readFileAsDataUrl(file));
+    };
+    img.src = url;
+  });
+}
 
 interface AvatarDropZoneProps {
-  personaId: string;
   avatar: Avatar | null | undefined;
   onChange: (avatar: Avatar | null) => void;
   disabled?: boolean;
 }
 
 export function AvatarDropZone({
-  personaId,
   avatar,
   onChange,
   disabled = false,
@@ -44,11 +109,8 @@ export function AvatarDropZone({
 
       setIsUploading(true);
       try {
-        const buffer = await file.arrayBuffer();
-        const bytes = Array.from(new Uint8Array(buffer));
-        const filename = await savePersonaAvatarBytes(personaId, bytes, ext);
-
-        onChange({ type: "local", value: filename });
+        const value = await resizeAvatarFile(file);
+        onChange({ type: "url", value });
       } catch (err) {
         console.error("Failed to save avatar:", err);
         setError(t("avatar.saveFailed"));
@@ -56,7 +118,7 @@ export function AvatarDropZone({
         setIsUploading(false);
       }
     },
-    [personaId, onChange, t],
+    [onChange, t],
   );
 
   // Standard HTML5 drag-and-drop (works when dragDropEnabled is false)

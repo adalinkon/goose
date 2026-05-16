@@ -45,6 +45,7 @@ import { useProviderInventoryStore } from "@/features/providers/stores/providerI
 import type { SkillInfo } from "@/features/skills/api/skills";
 import { toChatSkillDraft } from "@/features/skills/lib/skillChatPrompt";
 import { Spinner } from "@/shared/ui/spinner";
+import { SIDE_PANEL_DEFAULT_WIDTH } from "@/shared/constants/panels";
 
 export type AppView =
   | "home"
@@ -55,8 +56,8 @@ export type AppView =
   | "projects"
   | "session-history";
 
-const SIDEBAR_DEFAULT_WIDTH = 240;
-const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_DEFAULT_WIDTH = SIDE_PANEL_DEFAULT_WIDTH;
+const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 380;
 const SIDEBAR_SNAP_COLLAPSE_THRESHOLD = 100;
 const SIDEBAR_COLLAPSED_WIDTH = 48;

@@ -77,6 +77,31 @@ interface SidebarProps {
 }
 
 const EXPANDED_PROJECTS_STORAGE_KEY = "goose:sidebar:expanded-projects";
+const SECTION_VISIBILITY_STORAGE_KEY = "goose:sidebar:section-visibility";
+
+type SidebarSection = "projects" | "recents";
+type SidebarSectionVisibility = Record<SidebarSection, boolean>;
+
+function getStoredSectionVisibility(): SidebarSectionVisibility {
+  const defaults = { projects: true, recents: true };
+  if (typeof window === "undefined") return defaults;
+  try {
+    const stored = window.localStorage.getItem(SECTION_VISIBILITY_STORAGE_KEY);
+    if (!stored) return defaults;
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return defaults;
+    return {
+      projects:
+        typeof parsed.projects === "boolean"
+          ? parsed.projects
+          : defaults.projects,
+      recents:
+        typeof parsed.recents === "boolean" ? parsed.recents : defaults.recents,
+    };
+  } catch {
+    return defaults;
+  }
+}
 
 export function Sidebar({
   collapsed,
@@ -127,6 +152,9 @@ export function Sidebar({
   );
   const [activeServerStatus, setActiveServerStatus] =
     useState<ServerConnectionStatus>("checking");
+  const [sectionVisibility, setSectionVisibility] = useState(
+    getStoredSectionVisibility,
+  );
   const sessionStateById = useChatStore(selectSessionStateById);
   const sessions = useChatSessionStore(selectSessions);
   const getPersonaById = useAgentStore((s) => s.getPersonaById);
@@ -258,6 +286,17 @@ export function Sidebar({
   }, [expandedProjects]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SECTION_VISIBILITY_STORAGE_KEY,
+        JSON.stringify(sectionVisibility),
+      );
+    } catch {
+      // localStorage may be unavailable
+    }
+  }, [sectionVisibility]);
+
+  useEffect(() => {
     if (projects.length === 0) return;
     const validProjectIds = new Set(projects.map((project) => project.id));
     setExpandedProjects((prev) => {
@@ -323,6 +362,12 @@ export function Sidebar({
 
   const toggleProject = (projectId: string) =>
     setExpandedProjects((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
+
+  const toggleSection = (section: SidebarSection) =>
+    setSectionVisibility((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
 
   return (
     <div
@@ -529,6 +574,10 @@ export function Sidebar({
                   onRenameChat={onRenameChat}
                   onMoveToProject={onMoveToProject}
                   onReorderProject={onReorderProject}
+                  projectsSectionOpen={sectionVisibility.projects}
+                  recentsSectionOpen={sectionVisibility.recents}
+                  onToggleProjectsSection={() => toggleSection("projects")}
+                  onToggleRecentsSection={() => toggleSection("recents")}
                 />
               ))}
           </nav>

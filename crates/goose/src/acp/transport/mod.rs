@@ -349,27 +349,6 @@ mod tests {
             serde_json::from_str(&response_text(git_state).await).expect("git state json");
         assert_eq!(git_body["isGitRepo"], serde_json::json!(false));
 
-        let personas = app
-            .clone()
-            .oneshot(request(
-                Method::GET,
-                "/personas",
-                Some("test-secret"),
-                Body::empty(),
-            ))
-            .await
-            .expect("personas response");
-        assert_eq!(personas.status(), StatusCode::OK);
-        let personas_body: serde_json::Value =
-            serde_json::from_str(&response_text(personas).await).expect("personas json");
-        let personas = personas_body.as_array().expect("personas array");
-        assert!(
-            personas
-                .iter()
-                .any(|persona| persona.get("displayName") == Some(&serde_json::json!("Solo"))),
-            "personas route should return built-in personas"
-        );
-
         let provider_auth = app
             .clone()
             .oneshot(request(

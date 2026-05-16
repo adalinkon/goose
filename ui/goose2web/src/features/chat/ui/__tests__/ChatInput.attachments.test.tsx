@@ -195,6 +195,43 @@ describe("ChatInput attachments", () => {
     });
   });
 
+  it("sends a browser image upload as an image attachment", async () => {
+    const onSend = vi.fn();
+    const user = userEvent.setup();
+    const diagram = new File(["diagram"], "diagram.png", {
+      type: "image/png",
+    });
+
+    render(<ChatInput onSend={onSend} />);
+
+    await user.click(screen.getByRole("button", { name: /attach/i }));
+    await user.click(screen.getByRole("menuitem", { name: /^file$/i }));
+    const input = document.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("Expected hidden file input");
+    }
+    await user.upload(input, diagram);
+
+    await waitFor(() => {
+      expect(screen.getByAltText("Attachment 1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(onSend).toHaveBeenCalledWith(
+      "",
+      undefined,
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "image",
+          name: "diagram.png",
+          mimeType: "image/png",
+          base64: "diagram",
+        }),
+      ]),
+    );
+  });
+
   it("dedupes path attachments that differ only by case on case-insensitive platforms", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "prompt")

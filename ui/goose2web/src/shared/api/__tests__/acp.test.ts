@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockLoadSession = vi.fn();
 const mockNewSession = vi.fn();
+const mockPrompt = vi.fn();
 const mockSetProvider = vi.fn();
 const mockSetModel = vi.fn();
 
 vi.mock("../acpApi", () => ({
   listProviders: vi.fn(),
-  prompt: vi.fn(),
+  prompt: (...args: unknown[]) => mockPrompt(...args),
   setModel: (...args: unknown[]) => mockSetModel(...args),
   setProvider: (...args: unknown[]) => mockSetProvider(...args),
   listSessions: vi.fn(),
@@ -51,6 +52,34 @@ describe("acpLoadSession", () => {
     ).rejects.toThrow("load failed");
 
     expect(sessionRegistry.isSessionPrepared("acp-session-1")).toBe(true);
+  });
+});
+
+describe("acpSendMessage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    mockPrompt.mockResolvedValue({});
+  });
+
+  it("includes image content blocks in the ACP prompt payload", async () => {
+    const sessionRegistry = await import("../acpSessionRegistry");
+    const { acpSendMessage } = await import("../acp");
+
+    sessionRegistry.registerPreparedSession(
+      "acp-session-1",
+      "goose",
+      "/tmp/project",
+    );
+
+    await acpSendMessage("acp-session-1", "describe this", {
+      images: [["abc123", "image/png"]],
+    });
+
+    expect(mockPrompt).toHaveBeenCalledWith("acp-session-1", [
+      { type: "text", text: "describe this" },
+      { type: "image", data: "abc123", mimeType: "image/png" },
+    ]);
   });
 });
 
