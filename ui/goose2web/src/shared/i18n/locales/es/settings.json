@@ -97,6 +97,8 @@
     "addExtension": "Agregar extensión",
     "editExtension": "Editar extensión",
     "deleteExtension": "Eliminar extensión",
+    "enableExtension": "Activar {{name}}",
+    "disableExtension": "Desactivar {{name}}",
     "deleteConfirmation": {
       "title": "¿Eliminar \"{{name}}\" de forma permanente?",
       "description": "Esto eliminará de forma permanente esta extensión y toda su configuración.",
@@ -105,7 +107,17 @@
     },
     "configure": "Configurar {{name}}",
     "save": "Guardar",
+    "saving": "Guardando...",
     "cancel": "Cancelar",
+    "details": {
+      "noDescription": "No se proporcionó descripción.",
+      "toolsTitle": "Herramientas",
+      "toolsDescription": "Elige qué herramientas puede exponer esta extensión. Vacío significa que Goose no restringirá herramientas cuando no haya inventario disponible.",
+      "enableAllTools": "Activar todas",
+      "disableAllTools": "Desactivar todas",
+      "toggleTool": "Cambiar {{name}}",
+      "noTools": "Aún no hay inventario de herramientas para esta extensión. Inicia una sesión con la extensión activada para descubrir las herramientas en tiempo de ejecución."
+    },
     "fields": {
       "name": "Nombre",
       "namePlaceholder": "mi-extension",
@@ -146,6 +158,7 @@
     "errors": {
       "saveFailed": "Error al guardar la extensión. Inténtalo de nuevo.",
       "deleteFailed": "Error al eliminar la extensión. Inténtalo de nuevo.",
+      "toggleFailed": "Error al actualizar el estado de la extensión. Inténtalo de nuevo.",
       "nameConflict": "Ya existe una extensión llamada \"{{name}}\"."
     }
   },

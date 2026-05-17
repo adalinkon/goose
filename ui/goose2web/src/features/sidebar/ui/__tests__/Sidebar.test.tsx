@@ -132,4 +132,22 @@ describe("Sidebar", () => {
 
     expect(screen.getByRole("button", { name: /home/i })).toBeInTheDocument();
   });
+
+  it("renders Recipes under Agents", () => {
+    render(
+      <Sidebar
+        collapsed={false}
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    const agents = screen.getByRole("button", { name: /agents/i });
+    const recipes = screen.getByRole("button", { name: /recipes/i });
+
+    expect(agents.compareDocumentPosition(recipes)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
 });

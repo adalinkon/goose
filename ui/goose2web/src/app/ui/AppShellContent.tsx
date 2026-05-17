@@ -1,6 +1,7 @@
 import { HomeScreen } from "@/features/home/ui/HomeScreen";
 import { ChatView } from "@/features/chat/ui/ChatView";
 import { SkillsView } from "@/features/skills/ui/SkillsView";
+import { RecipesView } from "@/features/recipes/ui/RecipesView";
 import { ExtensionsView } from "@/features/extensions/ui/ExtensionsView";
 import { AgentsView } from "@/features/agents/ui/AgentsView";
 import { ProjectsView } from "@/features/projects/ui/ProjectsView";
@@ -57,6 +58,8 @@ export function AppShellContent({
       return <SettingsView activeSection={activeSettingsSection} />;
     case "skills":
       return <SkillsView onStartChatWithSkill={onStartChatWithSkill} />;
+    case "recipes":
+      return <RecipesView />;
     case "extensions":
       return <ExtensionsView />;
     case "agents":

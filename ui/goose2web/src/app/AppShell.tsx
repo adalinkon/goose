@@ -53,6 +53,7 @@ export type AppView =
   | "home"
   | "chat"
   | "skills"
+  | "recipes"
   | "extensions"
   | "agents"
   | "projects"

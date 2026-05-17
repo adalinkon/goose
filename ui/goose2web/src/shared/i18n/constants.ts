@@ -8,6 +8,7 @@ export const TRANSLATION_NAMESPACES = [
   "home",
   "onboarding",
   "projects",
+  "recipes",
   "settings",
   "skills",
   "sidebar",

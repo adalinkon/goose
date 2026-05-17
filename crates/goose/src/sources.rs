@@ -3,6 +3,10 @@
 //! `<project>/.agents/skills/`). Projects live in `<dataDir>/projects/<slug>.md`.
 
 use crate::config::paths::Paths;
+use crate::recipe::local_recipes::get_recipe_library_dir;
+use crate::recipe::read_recipe_file_content::read_recipe_file;
+use crate::recipe::validate_recipe::validate_recipe_template_from_content;
+use crate::recipe::{Recipe, RECIPE_FILE_EXTENSIONS};
 use crate::skills::{
     build_skill_md, discover_skills, infer_skill_name, is_global_skill_dir,
     parse_skill_frontmatter, resolve_discoverable_skill_dir, resolve_skill_dir, skill_base_dir,
@@ -34,7 +38,7 @@ pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
 
 fn require_mutable_type(source_type: SourceType) -> Result<(), Error> {
     match source_type {
-        SourceType::Skill | SourceType::Project | SourceType::Agent => Ok(()),
+        SourceType::Skill | SourceType::Project | SourceType::Agent | SourceType::Recipe => Ok(()),
         other => Err(Error::invalid_params().data(format!(
             "Source type '{other}' is not supported for mutation."
         ))),
@@ -47,6 +51,7 @@ fn require_listable_type(source_type: Option<SourceType>) -> Result<SourceType, 
         SourceType::BuiltinSkill => Ok(SourceType::BuiltinSkill),
         SourceType::Project => Ok(SourceType::Project),
         SourceType::Agent => Ok(SourceType::Agent),
+        SourceType::Recipe => Ok(SourceType::Recipe),
         other => Err(Error::invalid_params().data(format!(
             "Source type '{}' is not supported for listing.",
             other
@@ -307,6 +312,212 @@ fn builtin_skill_entry(mut source: SourceEntry) -> SourceEntry {
     source.global = true;
     source.supporting_files.clear();
     source
+}
+
+fn recipe_base_dir(global: bool, project_dir: Option<&str>) -> Result<PathBuf, Error> {
+    if global {
+        return Ok(get_recipe_library_dir(true));
+    }
+
+    let project_dir = project_dir.ok_or_else(|| {
+        Error::invalid_params().data("projectDir is required when global is false")
+    })?;
+    if project_dir.trim().is_empty() {
+        return Err(
+            Error::invalid_params().data("projectDir must not be empty when global is false")
+        );
+    }
+
+    Ok(Path::new(project_dir).join(".goose").join("recipes"))
+}
+
+fn recipe_file_format(path: &Path) -> Result<&'static str, Error> {
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .ok_or_else(|| {
+            Error::invalid_params().data("Recipe source must be a .yaml or .json file")
+        })?;
+    RECIPE_FILE_EXTENSIONS
+        .iter()
+        .copied()
+        .find(|candidate| *candidate == extension)
+        .ok_or_else(|| Error::invalid_params().data("Recipe source must be a .yaml or .json file"))
+}
+
+fn is_global_recipe_file(path: &Path) -> bool {
+    let canonical_path = canonicalize_or_original(path);
+    let global_root = get_recipe_library_dir(true);
+    canonical_path.starts_with(canonicalize_or_original(&global_root))
+}
+
+fn is_project_recipe_file(path: &Path) -> bool {
+    let parent_name = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str());
+    let grandparent_name = path
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str());
+
+    parent_name == Some("recipes") && grandparent_name == Some(".goose")
+}
+
+fn resolve_recipe_file(path: &str) -> Result<PathBuf, Error> {
+    if path.is_empty() {
+        return Err(Error::invalid_params().data("Source path must not be empty"));
+    }
+
+    let canonical_file = Path::new(path).canonicalize().map_err(|_| {
+        Error::invalid_params().data(format!("Recipe source \"{}\" not found", path))
+    })?;
+
+    recipe_file_format(&canonical_file)?;
+    if !canonical_file.is_file()
+        || (!is_global_recipe_file(&canonical_file) && !is_project_recipe_file(&canonical_file))
+    {
+        return Err(Error::invalid_params().data(format!("Recipe source \"{}\" not found", path)));
+    }
+
+    Ok(canonical_file)
+}
+
+fn validate_recipe_source_content(content: &str, recipe_dir: &Path) -> Result<Recipe, Error> {
+    let recipe_dir = recipe_dir.to_string_lossy().to_string();
+    let recipe = validate_recipe_template_from_content(content, Some(recipe_dir))
+        .map_err(|e| Error::invalid_params().data(format!("Invalid recipe: {e}")))?;
+    if recipe.check_for_security_warnings() {
+        return Err(Error::invalid_params().data("Recipe contains hidden unicode tag characters"));
+    }
+    Ok(recipe)
+}
+
+fn recipe_source_entry(path: &Path, global: bool) -> Result<SourceEntry, Error> {
+    let recipe_file = read_recipe_file(path)
+        .map_err(|e| Error::internal_error().data(format!("Failed to read recipe file: {e}")))?;
+    let recipe = Recipe::from_content(&recipe_file.content)
+        .map_err(|e| Error::invalid_params().data(format!("Invalid recipe: {e}")))?;
+    let name = recipe_file
+        .file_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| Error::internal_error().data("Failed to resolve recipe filename"))?
+        .to_string();
+    let format = recipe_file_format(&recipe_file.file_path)?;
+    let properties = HashMap::from([
+        (
+            "title".to_string(),
+            serde_json::Value::String(recipe.title.clone()),
+        ),
+        (
+            "version".to_string(),
+            serde_json::Value::String(recipe.version.clone()),
+        ),
+        (
+            "format".to_string(),
+            serde_json::Value::String(format.to_string()),
+        ),
+    ]);
+
+    Ok(SourceEntry {
+        source_type: SourceType::Recipe,
+        name,
+        description: recipe.description,
+        content: recipe_file.content,
+        path: recipe_file.file_path.to_string_lossy().to_string(),
+        global,
+        writable: true,
+        supporting_files: Vec::new(),
+        properties,
+    })
+}
+
+fn create_recipe_source(
+    name: &str,
+    content: &str,
+    global: bool,
+    project_dir: Option<&str>,
+) -> Result<SourceEntry, Error> {
+    validate_skill_name(name)?;
+    let base = recipe_base_dir(global, project_dir)?;
+    validate_recipe_source_content(content, &base)?;
+
+    fs::create_dir_all(&base).map_err(|e| {
+        Error::internal_error().data(format!("Failed to create recipe directory: {e}"))
+    })?;
+    let file_path = base.join(format!("{name}.yaml"));
+    if file_path.exists() {
+        return Err(
+            Error::invalid_params().data(format!("A source named \"{}\" already exists", name))
+        );
+    }
+
+    fs::write(&file_path, content)
+        .map_err(|e| Error::internal_error().data(format!("Failed to write recipe file: {e}")))?;
+    recipe_source_entry(&file_path, global)
+}
+
+fn update_recipe_source(path: &str, name: &str, content: &str) -> Result<SourceEntry, Error> {
+    validate_skill_name(name)?;
+    let file_path = resolve_recipe_file(path)?;
+    let base = file_path
+        .parent()
+        .ok_or_else(|| Error::internal_error().data("Failed to resolve recipe directory"))?
+        .to_path_buf();
+    validate_recipe_source_content(content, &base)?;
+
+    let current_name = file_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| Error::internal_error().data("Failed to resolve recipe filename"))?;
+    let target_path = if name == current_name {
+        file_path.clone()
+    } else {
+        let extension = recipe_file_format(&file_path)?;
+        let target_path = base.join(format!("{name}.{extension}"));
+        if target_path.exists() {
+            return Err(
+                Error::invalid_params().data(format!("A source named \"{}\" already exists", name))
+            );
+        }
+        fs::rename(&file_path, &target_path).map_err(|e| {
+            Error::internal_error().data(format!("Failed to rename recipe file: {e}"))
+        })?;
+        target_path
+    };
+
+    fs::write(&target_path, content)
+        .map_err(|e| Error::internal_error().data(format!("Failed to write recipe file: {e}")))?;
+    recipe_source_entry(&target_path, is_global_recipe_file(&target_path))
+}
+
+fn list_recipe_sources(project_dir: Option<&str>) -> Vec<SourceEntry> {
+    let mut roots = vec![(get_recipe_library_dir(true), true)];
+    if let Some(project_dir) = project_dir.map(str::trim).filter(|dir| !dir.is_empty()) {
+        roots.push((Path::new(project_dir).join(".goose").join("recipes"), false));
+    }
+
+    let mut sources = Vec::new();
+    for (root, global) in roots {
+        let entries = match fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if recipe_file_format(&path).is_err() {
+                continue;
+            }
+            match recipe_source_entry(&path, global) {
+                Ok(source) => sources.push(source),
+                Err(err) => warn!("Skipping recipe source {}: {:?}", path.display(), err),
+            }
+        }
+    }
+
+    sources
 }
 
 fn agent_base_dir(global: bool, project_dir: Option<&str>) -> Result<PathBuf, Error> {
@@ -640,6 +851,9 @@ pub fn create_source(
     if source_type == SourceType::Agent {
         return create_agent_source(name, description, content, properties, global, project_dir);
     }
+    if source_type == SourceType::Recipe {
+        return create_recipe_source(name, content, global, project_dir);
+    }
 
     match source_type {
         SourceType::Skill => {
@@ -720,6 +934,9 @@ pub fn update_source_with_roots(
             options.properties,
             options.additional_roots,
         );
+    }
+    if source_type == SourceType::Recipe {
+        return update_recipe_source(path, name, content);
     }
 
     match source_type {
@@ -841,6 +1058,12 @@ pub fn delete_source_with_roots(
                 Error::internal_error().data(format!("Failed to delete source: {e}"))
             })?;
         }
+        SourceType::Recipe => {
+            let file_path = resolve_recipe_file(path)?;
+            fs::remove_file(&file_path).map_err(|e| {
+                Error::internal_error().data(format!("Failed to delete recipe: {e}"))
+            })?;
+        }
         _ => unreachable!("guarded by require_mutable_type"),
     }
     Ok(())
@@ -938,7 +1161,10 @@ pub fn list_sources_with_roots(
             SourceType::Agent => {
                 sources.extend(list_agent_sources(project_dir, additional_roots));
             }
-            SourceType::Recipe | SourceType::Subrecipe => {
+            SourceType::Recipe => {
+                sources.extend(list_recipe_sources(project_dir));
+            }
+            SourceType::Subrecipe => {
                 return Err(Error::invalid_params()
                     .data(format!("Source type '{}' listing is not supported.", kind)));
             }
@@ -1038,6 +1264,22 @@ pub fn export_source_with_roots(
             let filename = format!("{}.project.json", slug);
             Ok((json, filename))
         }
+        SourceType::Recipe => {
+            let file_path = resolve_recipe_file(path)?;
+            let source = recipe_source_entry(&file_path, is_global_recipe_file(&file_path))?;
+            let export = serde_json::json!({
+                "version": 1,
+                "type": "recipe",
+                "name": source.name,
+                "description": source.description,
+                "content": source.content,
+            });
+            let json = serde_json::to_string_pretty(&export).map_err(|e| {
+                Error::internal_error().data(format!("Failed to serialize recipe: {e}"))
+            })?;
+            let filename = format!("{}.recipe.json", source.name);
+            Ok((json, filename))
+        }
         _ => Err(Error::invalid_params().data(format!(
             "Source type '{}' export is not supported.",
             source_type
@@ -1071,6 +1313,7 @@ pub fn import_sources(
         "skill" => SourceType::Skill,
         "project" => SourceType::Project,
         "agent" => SourceType::Agent,
+        "recipe" => SourceType::Recipe,
         other => {
             return Err(Error::invalid_params()
                 .data(format!("Source type '{}' import is not supported.", other)));
@@ -1135,6 +1378,21 @@ pub fn import_sources(
         )
         .map(|source| vec![source]);
     }
+    if source_type == SourceType::Recipe {
+        validate_skill_name(&name)?;
+        let base = recipe_base_dir(global, project_dir)?;
+        let mut final_name = name.clone();
+        if base.join(format!("{final_name}.yaml")).exists() {
+            final_name = format!("{}-imported", name);
+            let mut counter = 2u32;
+            while base.join(format!("{final_name}.yaml")).exists() {
+                final_name = format!("{}-imported-{}", name, counter);
+                counter += 1;
+            }
+        }
+        return create_recipe_source(&final_name, &content, global, project_dir)
+            .map(|entry| vec![entry]);
+    }
 
     match source_type {
         SourceType::Skill => {
@@ -1190,6 +1448,19 @@ pub fn import_sources(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    const BASIC_RECIPE: &str = r#"version: 1.0.0
+title: Test Recipe
+description: A managed recipe
+instructions: Test instructions
+"#;
+
+    fn env_guard_for(tmp: &TempDir) -> env_lock::EnvGuard<'static> {
+        env_lock::lock_env([(
+            "GOOSE_PATH_ROOT",
+            Some(tmp.path().to_string_lossy().into_owned()),
+        )])
+    }
 
     #[test]
     fn skill_name_validation() {
@@ -1587,7 +1858,7 @@ mod tests {
             HashMap::new(),
         )
         .unwrap_err();
-        assert!(format!("{:?}", err).contains("not supported"));
+        assert!(format!("{:?}", err).contains("not found"));
 
         let err = update_source_with_roots(
             SourceType::BuiltinSkill,
@@ -1628,14 +1899,14 @@ mod tests {
             .iter()
             .any(|source| source.source_type == SourceType::BuiltinSkill));
 
-        let err = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap_err();
-        assert!(format!("{:?}", err).contains("not supported"));
+        let listed = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap();
+        assert!(listed.is_empty());
 
         let err = export_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let err = export_source(SourceType::Recipe, "x").unwrap_err();
-        assert!(format!("{:?}", err).contains("not supported"));
+        assert!(format!("{:?}", err).contains("not found"));
 
         let payload = serde_json::json!({
             "version": 1,
@@ -1647,6 +1918,304 @@ mod tests {
         .to_string();
         let err = import_sources(&payload, false, Some(project)).unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
+    }
+
+    #[test]
+    fn create_list_update_delete_global_recipe() {
+        let tmp = TempDir::new().unwrap();
+        let _guard = env_guard_for(&tmp);
+
+        let created = create_source(
+            SourceType::Recipe,
+            "my-recipe",
+            "ignored",
+            BASIC_RECIPE,
+            true,
+            None,
+            HashMap::new(),
+        )
+        .unwrap();
+
+        assert_eq!(created.source_type, SourceType::Recipe);
+        assert_eq!(created.name, "my-recipe");
+        assert_eq!(created.description, "A managed recipe");
+        assert_eq!(created.content, BASIC_RECIPE);
+        assert!(created.global);
+        assert!(created.writable);
+        assert_eq!(
+            created.properties.get("title").and_then(|v| v.as_str()),
+            Some("Test Recipe")
+        );
+        assert_eq!(
+            created.properties.get("version").and_then(|v| v.as_str()),
+            Some("1.0.0")
+        );
+        assert_eq!(
+            created.properties.get("format").and_then(|v| v.as_str()),
+            Some("yaml")
+        );
+        assert_eq!(
+            PathBuf::from(&created.path),
+            Paths::config_dir().join("recipes").join("my-recipe.yaml")
+        );
+
+        let listed = list_sources(Some(SourceType::Recipe), None, false).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].content, BASIC_RECIPE);
+
+        let updated_content = r#"version: 1.0.0
+title: Updated Recipe
+description: Updated description
+prompt: Updated prompt
+"#;
+        let updated = update_source_with_roots(
+            SourceType::Recipe,
+            &created.path,
+            "renamed-recipe",
+            "ignored",
+            updated_content,
+            UpdateSourceOptions {
+                properties: None,
+                additional_roots: &[],
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.name, "renamed-recipe");
+        assert_eq!(updated.description, "Updated description");
+        assert_eq!(updated.content, updated_content);
+        assert!(!PathBuf::from(&created.path).exists());
+        assert!(PathBuf::from(&updated.path).ends_with("renamed-recipe.yaml"));
+
+        delete_source(SourceType::Recipe, &updated.path).unwrap();
+        assert!(!PathBuf::from(&updated.path).exists());
+    }
+
+    #[test]
+    fn create_project_recipe_requires_project_dir_and_lists_with_global() {
+        let tmp = TempDir::new().unwrap();
+        let _guard = env_guard_for(&tmp);
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+
+        let err = create_source(
+            SourceType::Recipe,
+            "missing-project",
+            "",
+            BASIC_RECIPE,
+            false,
+            None,
+            HashMap::new(),
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("projectDir"));
+
+        let global = create_source(
+            SourceType::Recipe,
+            "global-recipe",
+            "",
+            BASIC_RECIPE,
+            true,
+            None,
+            HashMap::new(),
+        )
+        .unwrap();
+        let project_recipe = create_source(
+            SourceType::Recipe,
+            "project-recipe",
+            "",
+            BASIC_RECIPE,
+            false,
+            Some(project.to_str().unwrap()),
+            HashMap::new(),
+        )
+        .unwrap();
+
+        assert!(global.global);
+        assert!(!project_recipe.global);
+        assert_eq!(
+            PathBuf::from(&project_recipe.path),
+            project
+                .join(".goose")
+                .join("recipes")
+                .join("project-recipe.yaml")
+        );
+
+        let global_only = list_sources(Some(SourceType::Recipe), None, false).unwrap();
+        assert_eq!(global_only.len(), 1);
+        assert_eq!(global_only[0].name, "global-recipe");
+
+        let all = list_sources(
+            Some(SourceType::Recipe),
+            Some(project.to_str().unwrap()),
+            false,
+        )
+        .unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().any(|source| source.name == "global-recipe"));
+        assert!(all.iter().any(|source| source.name == "project-recipe"));
+    }
+
+    #[test]
+    fn recipe_update_rename_rejects_existing_target() {
+        let tmp = TempDir::new().unwrap();
+        let _guard = env_guard_for(&tmp);
+
+        let first = create_source(
+            SourceType::Recipe,
+            "first",
+            "",
+            BASIC_RECIPE,
+            true,
+            None,
+            HashMap::new(),
+        )
+        .unwrap();
+        create_source(
+            SourceType::Recipe,
+            "second",
+            "",
+            BASIC_RECIPE,
+            true,
+            None,
+            HashMap::new(),
+        )
+        .unwrap();
+
+        let err = update_source_with_roots(
+            SourceType::Recipe,
+            &first.path,
+            "second",
+            "",
+            BASIC_RECIPE,
+            UpdateSourceOptions {
+                properties: None,
+                additional_roots: &[],
+            },
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("already exists"));
+    }
+
+    #[test]
+    fn recipe_rejects_unmanaged_paths_for_update_delete_export() {
+        let tmp = TempDir::new().unwrap();
+        let _guard = env_guard_for(&tmp);
+        let unmanaged = tmp.path().join("loose.yaml");
+        std::fs::write(&unmanaged, BASIC_RECIPE).unwrap();
+
+        let err = update_source_with_roots(
+            SourceType::Recipe,
+            unmanaged.to_str().unwrap(),
+            "loose",
+            "",
+            BASIC_RECIPE,
+            UpdateSourceOptions {
+                properties: None,
+                additional_roots: &[],
+            },
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("not found"));
+
+        let err = delete_source(SourceType::Recipe, unmanaged.to_str().unwrap()).unwrap_err();
+        assert!(format!("{:?}", err).contains("not found"));
+
+        let err = export_source(SourceType::Recipe, unmanaged.to_str().unwrap()).unwrap_err();
+        assert!(format!("{:?}", err).contains("not found"));
+    }
+
+    #[test]
+    fn recipe_export_import_roundtrip_and_collision_suffix() {
+        let tmp = TempDir::new().unwrap();
+        let _guard = env_guard_for(&tmp);
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+
+        let created = create_source(
+            SourceType::Recipe,
+            "portable",
+            "",
+            BASIC_RECIPE,
+            true,
+            None,
+            HashMap::new(),
+        )
+        .unwrap();
+        let (json, filename) = export_source(SourceType::Recipe, &created.path).unwrap();
+        assert_eq!(filename, "portable.recipe.json");
+        assert!(json.contains("\"type\": \"recipe\""));
+        assert!(json.contains(BASIC_RECIPE.trim()));
+
+        let imported = import_sources(&json, false, Some(project.to_str().unwrap())).unwrap();
+        assert_eq!(imported.len(), 1);
+        assert_eq!(imported[0].name, "portable");
+        assert!(!imported[0].global);
+
+        let imported_again = import_sources(&json, false, Some(project.to_str().unwrap())).unwrap();
+        assert_eq!(imported_again[0].name, "portable-imported");
+    }
+
+    #[test]
+    fn recipe_create_import_reject_invalid_and_hidden_unicode() {
+        let tmp = TempDir::new().unwrap();
+        let _guard = env_guard_for(&tmp);
+
+        let invalid = r#"version: 1.0.0
+title: Invalid Recipe
+description: Missing prompt and instructions
+"#;
+        let err = create_source(
+            SourceType::Recipe,
+            "invalid",
+            "",
+            invalid,
+            true,
+            None,
+            HashMap::new(),
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("Invalid recipe"));
+
+        let hidden_unicode = format!(
+            "version: 1.0.0\ntitle: Hidden\ndescription: Hidden unicode\ninstructions: bad{}\n",
+            '\u{E0041}'
+        );
+        let err = create_source(
+            SourceType::Recipe,
+            "hidden",
+            "",
+            &hidden_unicode,
+            true,
+            None,
+            HashMap::new(),
+        )
+        .unwrap_err();
+        assert!(format!("{:?}", err).contains("hidden unicode"));
+
+        let payload = serde_json::json!({
+            "version": 1,
+            "type": "recipe",
+            "name": "invalid-import",
+            "description": "",
+            "content": invalid,
+        })
+        .to_string();
+        let err = import_sources(&payload, true, None).unwrap_err();
+        assert!(format!("{:?}", err).contains("Invalid recipe"));
+    }
+
+    #[test]
+    fn recipe_list_skips_invalid_files() {
+        let tmp = TempDir::new().unwrap();
+        let _guard = env_guard_for(&tmp);
+        let dir = Paths::config_dir().join("recipes");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("valid.yaml"), BASIC_RECIPE).unwrap();
+        std::fs::write(dir.join("invalid.yaml"), "title: nope").unwrap();
+
+        let listed = list_sources(Some(SourceType::Recipe), None, false).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "valid");
     }
 
     #[test]

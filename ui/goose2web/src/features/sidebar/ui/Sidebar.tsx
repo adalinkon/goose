@@ -10,6 +10,7 @@ import {
   IconRobotFace,
   IconSearch,
   IconSettings,
+  IconChefHat,
 } from "@tabler/icons-react";
 import { SkillIcon } from "@/features/skills/ui/SkillIcon";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
@@ -199,6 +200,7 @@ export function Sidebar({
     icon: typeof IconRobotFace;
   }[] = [
     { id: "agents", label: t("navigation.agents"), icon: IconRobotFace },
+    { id: "recipes", label: t("navigation.recipes"), icon: IconChefHat },
     { id: "skills", label: t("navigation.skills"), icon: SkillIcon },
     {
       id: "extensions",
