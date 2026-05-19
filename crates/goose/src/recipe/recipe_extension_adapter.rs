@@ -1,4 +1,4 @@
-use crate::agents::extension::{Envs, ExtensionConfig};
+use crate::agents::extension::{Envs, ExtensionConfig, StreamableHttpBackendConfig};
 use rmcp::model::Tool;
 use serde::de::Deserializer;
 use serde::Deserialize;
@@ -63,6 +63,8 @@ enum RecipeExtensionConfigInternal {
         timeout: Option<u64>,
         #[serde(default)]
         socket: Option<String>,
+        #[serde(default)]
+        backend: Option<StreamableHttpBackendConfig>,
         #[serde(default)]
         bundled: Option<bool>,
         #[serde(default)]
@@ -143,6 +145,7 @@ impl From<RecipeExtensionConfigInternal> for ExtensionConfig {
                 headers,
                 timeout,
                 socket,
+                backend,
                 bundled,
                 available_tools
             },

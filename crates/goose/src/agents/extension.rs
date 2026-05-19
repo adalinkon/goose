@@ -147,6 +147,25 @@ impl Envs {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+pub struct StreamableHttpBackendConfig {
+    /// Template-rendered sharing key for this backend process.
+    pub id: String,
+    /// Command used to start the backend HTTP server.
+    pub cmd: String,
+    /// Arguments passed to the backend command.
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub envs: Envs,
+    #[serde(default)]
+    pub env_keys: Vec<String>,
+    /// Startup timeout in seconds.
+    pub timeout: Option<u64>,
+    /// Idle timeout in seconds after the last backend activity.
+    pub idle_timeout: Option<u64>,
+}
+
 /// Represents the different types of MCP extensions that can be added to the manager
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
 #[serde(tag = "type")]
@@ -242,6 +261,8 @@ pub enum ExtensionConfig {
         #[serde(default)]
         socket: Option<String>,
         #[serde(default)]
+        backend: Option<StreamableHttpBackendConfig>,
+        #[serde(default)]
         bundled: Option<bool>,
         #[serde(default)]
         available_tools: Vec<String>,
@@ -314,6 +335,7 @@ impl ExtensionConfig {
             description: description.into(),
             timeout: Some(timeout.into()),
             socket: None,
+            backend: None,
             bundled: None,
             available_tools: Vec::new(),
         }
@@ -468,6 +490,7 @@ impl ExtensionConfig {
                 headers,
                 timeout,
                 socket,
+                backend,
                 bundled,
                 available_tools,
             } => {
@@ -480,6 +503,21 @@ impl ExtensionConfig {
                     })
                     .collect();
                 let socket = socket.map(|s| substitute_env_vars(&s, &merged));
+                let backend = if let Some(backend) = backend {
+                    let backend_merged =
+                        merge_environments(&backend.envs, &backend.env_keys, &name, config).await?;
+                    Some(StreamableHttpBackendConfig {
+                        id: backend.id,
+                        cmd: backend.cmd,
+                        args: backend.args,
+                        envs: Envs::new(backend_merged),
+                        env_keys: vec![],
+                        timeout: backend.timeout,
+                        idle_timeout: backend.idle_timeout,
+                    })
+                } else {
+                    None
+                };
                 Ok(Self::StreamableHttp {
                     name,
                     description,
@@ -489,6 +527,7 @@ impl ExtensionConfig {
                     headers,
                     timeout,
                     socket,
+                    backend,
                     bundled,
                     available_tools,
                 })
@@ -696,6 +735,7 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            backend: None,
             bundled: None,
             available_tools: vec![],
         },
@@ -717,6 +757,7 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            backend: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -791,6 +832,7 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            backend: None,
             bundled: None,
             available_tools: vec![],
         },
@@ -809,6 +851,7 @@ available_tools: []
                 .collect(),
             timeout: None,
             socket: None,
+            backend: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -824,6 +867,7 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            backend: None,
             bundled: None,
             available_tools: vec![],
         },
@@ -840,6 +884,7 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            backend: None,
             bundled: None,
             available_tools: vec![],
         }
@@ -901,6 +946,7 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: Some("@egress.sock".to_string()),
+            backend: None,
             bundled: None,
             available_tools: vec![],
         };
@@ -921,6 +967,7 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            backend: None,
             bundled: None,
             available_tools: vec![],
         };

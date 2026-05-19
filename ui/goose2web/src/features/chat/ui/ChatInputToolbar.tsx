@@ -32,9 +32,11 @@ import { useProviderCatalogStore } from "@/features/providers/stores/providerCat
 import { supportsContextCompactionControls } from "../lib/autoCompact";
 import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
 import { ProjectSelectorIcon } from "./ProjectSelectorIcon";
+import { ChatInputExtensionsPicker } from "./ChatInputExtensionsPicker";
 import type {
   ChatInputAgentModelPicker,
   ChatInputContextUsage,
+  ChatInputExtensionPicker,
   ChatInputPersonaPicker,
   ChatInputProjectPicker,
 } from "../types";
@@ -61,6 +63,7 @@ interface ChatInputToolbarProps {
   personaPicker: Pick<ChatInputPersonaPicker, "selectedPersonaId">;
   agentModelPicker: ChatInputAgentModelPicker;
   projectPicker: ChatInputProjectPicker;
+  extensionPicker: ChatInputExtensionPicker;
   contextUsage: ChatInputContextUsage;
   composerActions: ChatInputToolbarComposerActions;
   isCompact: boolean;
@@ -70,6 +73,7 @@ export function ChatInputToolbar({
   personaPicker,
   agentModelPicker,
   projectPicker,
+  extensionPicker,
   contextUsage,
   composerActions,
   isCompact,
@@ -99,6 +103,11 @@ export function ChatInputToolbar({
     onProjectChange,
     onCreateProject,
   } = projectPicker;
+  const {
+    extensions = [],
+    loading: extensionsLoading = false,
+    error: extensionsError = false,
+  } = extensionPicker;
   const {
     contextTokens = 0,
     contextLimit = 0,
@@ -283,6 +292,13 @@ export function ChatInputToolbar({
             },
           ].filter((section) => section.items.length > 0)}
           onValueChange={handleProjectValueChange}
+        />
+
+        <ChatInputExtensionsPicker
+          extensions={extensions}
+          loading={extensionsLoading}
+          error={extensionsError}
+          isCompact={isCompact}
         />
       </div>
 

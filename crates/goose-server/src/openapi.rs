@@ -1,4 +1,5 @@
 use goose::agents::extension::Envs;
+use goose::agents::extension::StreamableHttpBackendConfig;
 use goose::agents::extension::ToolInfo;
 use goose::agents::ExtensionConfig;
 use goose::config::permission::PermissionLevel;
@@ -560,6 +561,7 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         EnvVarConfig,
         ExtensionEntry,
         ExtensionConfig,
+        StreamableHttpBackendConfig,
         ConfigKey,
         Envs,
         RecipeManifest,

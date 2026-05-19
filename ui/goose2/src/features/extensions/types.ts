@@ -40,8 +40,19 @@ export interface StreamableHttpExtensionConfig {
   headers?: Record<string, string>;
   timeout?: number;
   socket?: string;
+  backend?: StreamableHttpBackendConfig;
   bundled?: boolean;
   available_tools?: string[];
+}
+
+export interface StreamableHttpBackendConfig {
+  id: string;
+  cmd: string;
+  args?: string[];
+  envs?: Record<string, string>;
+  env_keys?: string[];
+  timeout?: number;
+  idle_timeout?: number;
 }
 
 export interface SseExtensionConfig {

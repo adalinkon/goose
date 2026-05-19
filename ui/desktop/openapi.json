@@ -5179,6 +5179,14 @@
                   "type": "string"
                 }
               },
+              "backend": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StreamableHttpBackendConfig"
+                  }
+                ],
+                "nullable": true
+              },
               "bundled": {
                 "type": "boolean",
                 "nullable": true
@@ -8332,6 +8340,53 @@
         "properties": {
           "session_id": {
             "type": "string"
+          }
+        }
+      },
+      "StreamableHttpBackendConfig": {
+        "type": "object",
+        "required": [
+          "id",
+          "cmd"
+        ],
+        "properties": {
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Arguments passed to the backend command."
+          },
+          "cmd": {
+            "type": "string",
+            "description": "Command used to start the backend HTTP server."
+          },
+          "env_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "envs": {
+            "$ref": "#/components/schemas/Envs"
+          },
+          "id": {
+            "type": "string",
+            "description": "Template-rendered sharing key for this backend process."
+          },
+          "idle_timeout": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Idle timeout in seconds after the last backend activity.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "timeout": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Startup timeout in seconds.",
+            "nullable": true,
+            "minimum": 0
           }
         }
       },

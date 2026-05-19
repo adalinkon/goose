@@ -37,6 +37,7 @@ export function ChatInput({
   personaPicker,
   agentModelPicker,
   projectPicker,
+  extensionPicker,
   contextUsage,
 }: ChatInputProps) {
   const {
@@ -525,6 +526,7 @@ export function ChatInput({
                   onProjectChange,
                   onCreateProject,
                 }}
+                extensionPicker={extensionPicker ?? {}}
                 contextUsage={{
                   contextTokens,
                   contextLimit,

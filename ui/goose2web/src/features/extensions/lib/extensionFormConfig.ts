@@ -165,6 +165,9 @@ export function buildExtensionSubmitPayload({
       ...(extension?.type === "streamable_http" && extension.socket
         ? { socket: extension.socket }
         : {}),
+      ...(extension?.type === "streamable_http" && extension.backend
+        ? { backend: extension.backend }
+        : {}),
       timeout: timeoutNum,
       ...commonFields,
     },

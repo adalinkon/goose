@@ -172,6 +172,11 @@ export function ChatView({
                   },
                 }),
             }}
+            extensionPicker={{
+              extensions: controller.sessionExtensions,
+              loading: controller.sessionExtensionsLoading,
+              error: controller.sessionExtensionsError,
+            }}
             contextUsage={{
               contextTokens: controller.tokenState.accumulatedTotal,
               contextLimit: controller.tokenState.contextLimit,

@@ -282,7 +282,9 @@
       "properties": {
         "extensions": {
           "type": "array",
-          "items": {}
+          "items": {
+            "$ref": "#/$defs/SessionExtensionInfo"
+          }
         }
       },
       "required": [
@@ -290,6 +292,54 @@
       ],
       "x-side": "agent",
       "x-method": "_goose/session/extensions"
+    },
+    "SessionExtensionInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SessionExtensionStatus"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionExtensionTool"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "name",
+        "status"
+      ]
+    },
+    "SessionExtensionStatus": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "running",
+        "failed",
+        "stopped"
+      ]
+    },
+    "SessionExtensionTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
     },
     "ListProvidersRequest": {
       "type": "object",

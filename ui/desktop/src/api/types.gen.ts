@@ -404,6 +404,7 @@ export type ExtensionConfig = {
     type: 'platform';
 } | {
     available_tools?: Array<string>;
+    backend?: StreamableHttpBackendConfig | null;
     bundled?: boolean | null;
     description: string;
     env_keys?: Array<string>;
@@ -1404,6 +1405,31 @@ export type StartAgentRequest = {
 
 export type StopAgentRequest = {
     session_id: string;
+};
+
+export type StreamableHttpBackendConfig = {
+    /**
+     * Arguments passed to the backend command.
+     */
+    args?: Array<string>;
+    /**
+     * Command used to start the backend HTTP server.
+     */
+    cmd: string;
+    env_keys?: Array<string>;
+    envs?: Envs;
+    /**
+     * Template-rendered sharing key for this backend process.
+     */
+    id: string;
+    /**
+     * Idle timeout in seconds after the last backend activity.
+     */
+    idle_timeout?: number | null;
+    /**
+     * Startup timeout in seconds.
+     */
+    timeout?: number | null;
 };
 
 export type SubRecipe = {

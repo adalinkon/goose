@@ -149,7 +149,20 @@ export type GetSessionExtensionsRequest = {
 };
 
 export type GetSessionExtensionsResponse = {
-    extensions: Array<unknown>;
+    extensions: Array<SessionExtensionInfo>;
+};
+
+export type SessionExtensionInfo = {
+    name: string;
+    status: SessionExtensionStatus;
+    tools?: Array<SessionExtensionTool>;
+};
+
+export type SessionExtensionStatus = 'starting' | 'running' | 'failed' | 'stopped';
+
+export type SessionExtensionTool = {
+    name: string;
+    description?: string | null;
 };
 
 /**

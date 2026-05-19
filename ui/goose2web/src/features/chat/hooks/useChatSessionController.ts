@@ -22,6 +22,10 @@ import { applyLatestSessionConfig } from "../lib/sessionConfigRequests";
 import { supportsContextCompactionControls } from "../lib/autoCompact";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
 import {
+  listSessionExtensions,
+  type SessionExtensionInfo,
+} from "@/features/extensions/api/extensions";
+import {
   useResolvedAgentModelPicker,
   type PreferredModelSelection,
 } from "./useResolvedAgentModelPicker";
@@ -81,6 +85,12 @@ export function useChatSessionController({
   const [pendingProviderId, setPendingProviderId] = useState<string>();
   const [pendingModelSelection, setPendingModelSelection] =
     useState<PreferredModelSelection | null>();
+  const [sessionExtensions, setSessionExtensions] = useState<
+    SessionExtensionInfo[]
+  >([]);
+  const [sessionExtensionsLoading, setSessionExtensionsLoading] =
+    useState(false);
+  const [sessionExtensionsError, setSessionExtensionsError] = useState(false);
   const pendingDraftValue = useChatStore(
     (s) => s.draftsBySession[PENDING_HOME_SESSION_ID] ?? "",
   );
@@ -206,6 +216,51 @@ export function useChatSessionController({
       ),
     [activeWorkspace?.path, prepareCurrentSession, project],
   );
+
+  useEffect(() => {
+    if (!sessionId) {
+      setSessionExtensions([]);
+      setSessionExtensionsLoading(false);
+      setSessionExtensionsError(false);
+      return;
+    }
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const loadExtensions = async (attempt = 0) => {
+      setSessionExtensionsLoading(true);
+      try {
+        const extensions = await listSessionExtensions(sessionId);
+        if (cancelled) return;
+        setSessionExtensions(extensions);
+        setSessionExtensionsError(false);
+
+        if (
+          extensions.some((extension) => extension.status === "starting") ||
+          (extensions.length === 0 && attempt < 4)
+        ) {
+          retryTimer = setTimeout(() => loadExtensions(attempt + 1), 1500);
+        }
+      } catch {
+        if (!cancelled) {
+          setSessionExtensions([]);
+          setSessionExtensionsError(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionExtensionsLoading(false);
+        }
+      }
+    };
+
+    void loadExtensions();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [effectiveProjectId, sessionId]);
 
   const prevProjectIdRef = useRef(session?.projectId);
   useEffect(() => {
@@ -752,5 +807,8 @@ export function useChatSessionController({
     selectedProjectId: effectiveProjectId,
     availableProjects,
     handleProjectChange,
+    sessionExtensions,
+    sessionExtensionsLoading,
+    sessionExtensionsError,
   };
 }

@@ -1,4 +1,5 @@
 import type { AcpProvider } from "@/shared/api/acp";
+import type { SessionExtensionInfo } from "@/features/extensions/api/extensions";
 import type { Persona } from "@/shared/types/agents";
 import type { ChatAttachmentDraft, MessageChip } from "@/shared/types/messages";
 
@@ -81,6 +82,12 @@ export interface ChatInputProjectPicker {
   }) => void;
 }
 
+export interface ChatInputExtensionPicker {
+  extensions?: SessionExtensionInfo[];
+  loading?: boolean;
+  error?: boolean;
+}
+
 export interface ChatInputContextUsage {
   contextTokens?: number;
   contextLimit?: number;
@@ -101,5 +108,6 @@ export interface ChatInputProps {
   personaPicker?: ChatInputPersonaPicker;
   agentModelPicker?: ChatInputAgentModelPicker;
   projectPicker?: ChatInputProjectPicker;
+  extensionPicker?: ChatInputExtensionPicker;
   contextUsage?: ChatInputContextUsage;
 }

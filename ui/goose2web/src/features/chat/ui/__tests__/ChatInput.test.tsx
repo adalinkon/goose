@@ -565,6 +565,9 @@ describe("ChatInput", () => {
           selectedProjectId: null,
           availableProjects: [],
         }}
+        extensionPicker={{
+          extensions: [],
+        }}
         contextUsage={{
           contextTokens: 0,
           contextLimit: 0,
