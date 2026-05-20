@@ -180,6 +180,12 @@
     "extensionsLoadError": "Failed to load extensions",
     "extensionsSomeUnavailable": "Some extensions are unavailable",
     "extensionsStarting": "Extensions are starting",
+    "extensionStatus": {
+      "failed": "Failed",
+      "running": "Running",
+      "starting": "Starting",
+      "stopped": "Stopped"
+    },
     "generalChatWithoutProject": "General chat without project context",
     "loading": "Loading...",
     "loadingExtensions": "Loading extensions...",

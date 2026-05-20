@@ -180,6 +180,12 @@
     "extensionsLoadError": "No se pudieron cargar las extensiones",
     "extensionsSomeUnavailable": "Algunas extensiones no estan disponibles",
     "extensionsStarting": "Las extensiones se estan iniciando",
+    "extensionStatus": {
+      "failed": "Fallida",
+      "running": "En ejecucion",
+      "starting": "Iniciando",
+      "stopped": "Detenida"
+    },
     "generalChatWithoutProject": "Chat general sin contexto de proyecto",
     "loading": "Cargando...",
     "loadingExtensions": "Cargando extensiones...",

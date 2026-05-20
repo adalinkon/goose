@@ -3,6 +3,7 @@ use crate::agents::GoosePlatform;
 use crate::source_roots::SourceRoot;
 use anyhow::Result;
 use std::sync::Arc;
+use tokio::sync::OnceCell;
 use tracing::info;
 
 pub struct AcpServerFactoryConfig {
@@ -15,14 +16,25 @@ pub struct AcpServerFactoryConfig {
 
 pub struct AcpServer {
     config: AcpServerFactoryConfig,
+    agent: OnceCell<Arc<GooseAcpAgent>>,
 }
 
 impl AcpServer {
     pub fn new(config: AcpServerFactoryConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            agent: OnceCell::new(),
+        }
     }
 
     pub async fn create_agent(&self) -> Result<Arc<GooseAcpAgent>> {
+        self.agent
+            .get_or_try_init(|| self.build_agent())
+            .await
+            .cloned()
+    }
+
+    async fn build_agent(&self) -> Result<Arc<GooseAcpAgent>> {
         let config_path = self
             .config
             .config_dir
@@ -52,7 +64,7 @@ impl AcpServer {
             additional_source_roots: self.config.additional_source_roots.clone(),
         })
         .await?;
-        info!("Created new ACP agent");
+        info!("Created shared ACP agent");
 
         Ok(Arc::new(agent))
     }

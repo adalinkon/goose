@@ -17,12 +17,22 @@ vi.mock("@/features/chat/stores/chatStore", () => ({
     selector({
       messagesBySession: {},
       sessionStateById: {},
+      sessionMessageCountById: {},
     }),
 }));
 
 vi.mock("@/features/chat/stores/chatSessionStore", () => ({
   getVisibleSessions: (sessions: typeof mockSessions) =>
     sessions.filter((session) => session.messageCount > 0),
+  getVisibleSessionsByMessageCount: (
+    sessions: typeof mockSessions,
+    sessionMessageCountById: Record<string, number>,
+  ) =>
+    sessions.filter(
+      (session) =>
+        session.messageCount > 0 ||
+        (sessionMessageCountById[session.id] ?? 0) > 0,
+    ),
   useChatSessionStore: (selector: (state: unknown) => unknown) =>
     selector({
       sessions: mockSessions,

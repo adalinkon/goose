@@ -229,16 +229,21 @@ export async function newSession(
 export async function loadSession(
   sessionId: string,
   workingDir: string,
+  options?: { lastSeq?: number },
 ): Promise<LoadSessionResponse> {
   const sid = sessionId.slice(0, 8);
   const tClient = performance.now();
   const client = await getClient();
   const tCall = performance.now();
-  const response = await client.loadSession({
+  const request: Parameters<typeof client.loadSession>[0] = {
     sessionId,
     cwd: workingDir,
     mcpServers: [],
-  });
+  };
+  if (options?.lastSeq !== undefined) {
+    request._meta = { lastSeq: options.lastSeq };
+  }
+  const response = await client.loadSession(request);
   perfLog(
     `[perf:api] ${sid} loadSession getClient=${(tCall - tClient).toFixed(1)}ms wire=${(performance.now() - tCall).toFixed(1)}ms`,
   );

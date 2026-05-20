@@ -2,10 +2,64 @@ use super::*;
 use std::collections::HashSet;
 
 enum SessionExtensionsRuntime {
-    Loading,
+    Loading(Option<Arc<Agent>>),
     Ready(Arc<Agent>),
     Failed,
     Stopped,
+}
+
+pub(super) async fn session_extension_infos_from_agent(
+    agent: Arc<Agent>,
+    session_id: &str,
+    extensions: Vec<ExtensionConfig>,
+    unloaded_status: SessionExtensionStatus,
+) -> Vec<SessionExtensionInfo> {
+    let loaded_extension_names = agent.list_extensions().await;
+    let loaded_extensions = loaded_extension_names
+        .iter()
+        .map(|name| crate::config::extensions::name_to_key(name))
+        .collect::<HashSet<_>>();
+
+    let mut extension_names = extensions
+        .into_iter()
+        .map(|extension| extension.name())
+        .collect::<Vec<_>>();
+    let expected_extensions = extension_names
+        .iter()
+        .map(|name| crate::config::extensions::name_to_key(name))
+        .collect::<HashSet<_>>();
+    extension_names.extend(loaded_extension_names.into_iter().filter(|name| {
+        !expected_extensions.contains(&crate::config::extensions::name_to_key(name))
+    }));
+
+    let mut result = Vec::with_capacity(extension_names.len());
+    for extension_name in extension_names {
+        let extension_key = crate::config::extensions::name_to_key(&extension_name);
+        let status = if loaded_extensions.contains(&extension_key) {
+            SessionExtensionStatus::Running
+        } else {
+            unloaded_status
+        };
+        let tools = if matches!(status, SessionExtensionStatus::Running) {
+            agent
+                .list_tools(session_id, Some(extension_name.clone()))
+                .await
+                .into_iter()
+                .map(|tool| SessionExtensionTool {
+                    name: tool.name.to_string(),
+                    description: tool.description.map(|description| description.to_string()),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        result.push(SessionExtensionInfo {
+            name: extension_name,
+            status,
+            tools,
+        });
+    }
+    result
 }
 
 impl GooseAcpAgent {
@@ -143,9 +197,10 @@ impl GooseAcpAgent {
                         Some(Ok(AgentSetupProgress::FullyReady(agent))) => {
                             SessionExtensionsRuntime::Ready(agent.clone())
                         }
-                        Some(Ok(AgentSetupProgress::ProviderReady(_))) | None => {
-                            SessionExtensionsRuntime::Loading
+                        Some(Ok(AgentSetupProgress::ProviderReady(agent))) => {
+                            SessionExtensionsRuntime::Loading(Some(agent.clone()))
                         }
+                        None => SessionExtensionsRuntime::Loading(None),
                         Some(Err(_)) => SessionExtensionsRuntime::Failed,
                     },
                 },
@@ -154,7 +209,16 @@ impl GooseAcpAgent {
         };
 
         let extensions = match runtime {
-            SessionExtensionsRuntime::Loading => extensions
+            SessionExtensionsRuntime::Loading(Some(agent)) => {
+                session_extension_infos_from_agent(
+                    agent,
+                    session_id,
+                    extensions,
+                    SessionExtensionStatus::Starting,
+                )
+                .await
+            }
+            SessionExtensionsRuntime::Loading(None) => extensions
                 .into_iter()
                 .map(|extension| SessionExtensionInfo {
                     name: extension.name(),
@@ -179,54 +243,13 @@ impl GooseAcpAgent {
                 })
                 .collect(),
             SessionExtensionsRuntime::Ready(agent) => {
-                let loaded_extension_names = agent.list_extensions().await;
-                let loaded_extensions = loaded_extension_names
-                    .iter()
-                    .map(|name| crate::config::extensions::name_to_key(name))
-                    .collect::<HashSet<_>>();
-
-                let mut extension_names = extensions
-                    .into_iter()
-                    .map(|extension| extension.name())
-                    .collect::<Vec<_>>();
-                let expected_extensions = extension_names
-                    .iter()
-                    .map(|name| crate::config::extensions::name_to_key(name))
-                    .collect::<HashSet<_>>();
-                extension_names.extend(loaded_extension_names.into_iter().filter(|name| {
-                    !expected_extensions.contains(&crate::config::extensions::name_to_key(name))
-                }));
-
-                let mut result = Vec::with_capacity(extension_names.len());
-                for extension_name in extension_names {
-                    let extension_key = crate::config::extensions::name_to_key(&extension_name);
-                    let status = if loaded_extensions.contains(&extension_key) {
-                        SessionExtensionStatus::Running
-                    } else {
-                        SessionExtensionStatus::Stopped
-                    };
-                    let tools = if matches!(status, SessionExtensionStatus::Running) {
-                        agent
-                            .list_tools(session_id, Some(extension_name.clone()))
-                            .await
-                            .into_iter()
-                            .map(|tool| SessionExtensionTool {
-                                name: tool.name.to_string(),
-                                description: tool
-                                    .description
-                                    .map(|description| description.to_string()),
-                            })
-                            .collect()
-                    } else {
-                        Vec::new()
-                    };
-                    result.push(SessionExtensionInfo {
-                        name: extension_name,
-                        status,
-                        tools,
-                    });
-                }
-                result
+                session_extension_infos_from_agent(
+                    agent,
+                    session_id,
+                    extensions,
+                    SessionExtensionStatus::Stopped,
+                )
+                .await
             }
         };
 

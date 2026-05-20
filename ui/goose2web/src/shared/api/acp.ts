@@ -1,4 +1,7 @@
-import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type {
+  ContentBlock,
+  LoadSessionResponse,
+} from "@agentclientprotocol/sdk";
 import * as directAcp from "./acpApi";
 import type { AcpSessionInfo } from "./acpApi";
 import * as sessionRegistry from "./acpSessionRegistry";
@@ -198,7 +201,8 @@ export async function acpSearchSessions(
 export async function acpLoadSession(
   sessionId: string,
   workingDir?: string,
-): Promise<void> {
+  options?: { lastSeq?: number },
+): Promise<LoadSessionResponse> {
   const effectiveWorkingDir = workingDir ?? "~";
   const sid = sessionId.slice(0, 8);
   const t0 = performance.now();
@@ -209,10 +213,15 @@ export async function acpLoadSession(
   );
   try {
     perfLog(`[perf:load] ${sid} acpLoadSession → client.loadSession`);
-    await directAcp.loadSession(sessionId, effectiveWorkingDir);
+    const response = await directAcp.loadSession(
+      sessionId,
+      effectiveWorkingDir,
+      options,
+    );
     perfLog(
       `[perf:load] ${sid} client.loadSession resolved in ${(performance.now() - t0).toFixed(1)}ms`,
     );
+    return response;
   } catch (error) {
     rollbackSessionRegistration();
     throw error;

@@ -87,6 +87,10 @@ pub(crate) async fn handle_post(
 
     if let Some(sid) = session_id.as_deref() {
         connection.ensure_session(sid).await;
+        connection
+            .agent
+            .attach_client(sid, connection_id.clone())
+            .await;
     }
     if is_jsonrpc_request_with_id(&json_message) {
         if let Some(id) = json_message.get("id") {
@@ -276,6 +280,7 @@ pub(crate) async fn handle_delete(
     let Some(connection) = registry.remove(&connection_id).await else {
         return (StatusCode::NOT_FOUND, "Unknown Acp-Connection-Id").into_response();
     };
+    connection.agent.detach_client(&connection_id).await;
     connection.shutdown().await;
     info!(connection_id = %connection_id, "Connection terminated via DELETE");
     StatusCode::ACCEPTED.into_response()

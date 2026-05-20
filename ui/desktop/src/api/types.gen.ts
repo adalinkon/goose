@@ -1423,10 +1423,6 @@ export type StreamableHttpBackendConfig = {
      */
     id: string;
     /**
-     * Idle timeout in seconds after the last backend activity.
-     */
-    idle_timeout?: number | null;
-    /**
      * Startup timeout in seconds.
      */
     timeout?: number | null;

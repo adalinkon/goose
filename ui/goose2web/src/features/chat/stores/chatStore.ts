@@ -3,6 +3,8 @@ import type {
   ChatAttachmentDraft,
   Message,
   MessageContent,
+  ToolRequestContent,
+  ToolResponseContent,
 } from "@/shared/types/messages";
 import { clearReplayBuffer } from "../hooks/replayBuffer";
 import type {
@@ -14,6 +16,17 @@ import {
   INITIAL_SESSION_CHAT_RUNTIME,
   INITIAL_TOKEN_STATE,
 } from "@/shared/types/chat";
+import type { SessionRuntimeView } from "../runtime/types";
+import { INITIAL_SESSION_RUNTIME_VIEW } from "../runtime/types";
+import {
+  appendContentToIndex,
+  appendMessageToIndex,
+  clearSessionMessageIndex,
+  getSessionMessageIndex,
+  rebuildSessionMessageIndex,
+  removeMessageFromIndex,
+} from "../runtime/sessionIndexes";
+import { clearSessionRuntimeBuffers } from "../runtime/sessionBuffers";
 import type { ChatSendOptions, ChatSkillDraft } from "../types";
 import { loadCachedDrafts, persistDrafts } from "./draftPersistence";
 
@@ -39,6 +52,9 @@ export interface ScrollTargetMessage {
 interface ChatStoreState {
   messagesBySession: Record<string, Message[]>;
   sessionStateById: Record<string, SessionChatRuntime>;
+  sessionRuntimeViewById: Record<string, SessionRuntimeView>;
+  sessionMessageCountById: Record<string, number>;
+  startedSessionIds: Set<string>;
   queuedMessageBySession: Record<string, QueuedMessage>;
   draftsBySession: Record<string, string>;
   skillDraftsBySession: Record<string, ChatSkillDraft[]>;
@@ -51,6 +67,7 @@ interface ChatStoreState {
 interface ChatStoreActions {
   setActiveSession: (sessionId: string) => void;
   addMessage: (sessionId: string, message: Message) => void;
+  appendMessage: (sessionId: string, message: Message) => void;
   updateMessage: (
     sessionId: string,
     messageId: string,
@@ -70,8 +87,37 @@ interface ChatStoreActions {
     sessionId: string,
     content: MessageContent,
   ) => void;
+  appendContentByMessageId: (
+    sessionId: string,
+    messageId: string,
+    content: MessageContent,
+  ) => void;
+  appendTextByMessageId: (
+    sessionId: string,
+    messageId: string,
+    text: string,
+  ) => void;
+  appendToolRequest: (
+    sessionId: string,
+    messageId: string,
+    toolRequest: ToolRequestContent,
+  ) => void;
+  patchToolRequest: (
+    sessionId: string,
+    toolCallId: string,
+    patch: Partial<ToolRequestContent>,
+  ) => void;
+  appendToolResponse: (
+    sessionId: string,
+    toolCallId: string,
+    response: ToolResponseContent,
+  ) => void;
   updateStreamingText: (sessionId: string, text: string) => void;
   setChatState: (sessionId: string, state: ChatState) => void;
+  setRuntimeView: (
+    sessionId: string,
+    runtimeView: Partial<SessionRuntimeView>,
+  ) => void;
   setError: (sessionId: string, error: string | null) => void;
   setConnected: (connected: boolean) => void;
   markSessionRead: (sessionId: string) => void;
@@ -105,6 +151,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   // State
   messagesBySession: {},
   sessionStateById: {},
+  sessionRuntimeViewById: {},
+  sessionMessageCountById: {},
+  startedSessionIds: new Set<string>(),
   queuedMessageBySession: {},
   draftsBySession: loadCachedDrafts(),
   skillDraftsBySession: {},
@@ -126,24 +175,39 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     })),
 
   // Message management
-  addMessage: (sessionId, message) =>
-    set((state) => ({
-      messagesBySession: {
-        ...state.messagesBySession,
-        [sessionId]: [...(state.messagesBySession[sessionId] ?? []), message],
-      },
-    })),
+  addMessage: (sessionId, message) => get().appendMessage(sessionId, message),
+
+  appendMessage: (sessionId, message) =>
+    set((state) => {
+      const messages = [...(state.messagesBySession[sessionId] ?? []), message];
+      appendMessageToIndex(sessionId, message, messages.length - 1);
+      const startedSessionIds = new Set(state.startedSessionIds);
+      startedSessionIds.add(sessionId);
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: messages,
+        },
+        sessionMessageCountById: {
+          ...state.sessionMessageCountById,
+          [sessionId]: messages.length,
+        },
+        startedSessionIds,
+      };
+    }),
 
   updateMessage: (sessionId, messageId, updater) =>
     set((state) => {
       const messages = state.messagesBySession[sessionId];
       if (!messages) return state;
+      const nextMessages = messages.map((m) =>
+        m.id === messageId ? updater(m) : m,
+      );
+      rebuildSessionMessageIndex(sessionId, nextMessages);
       return {
         messagesBySession: {
           ...state.messagesBySession,
-          [sessionId]: messages.map((m) =>
-            m.id === messageId ? updater(m) : m,
-          ),
+          [sessionId]: nextMessages,
         },
       };
     }),
@@ -152,33 +216,64 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((state) => {
       const messages = state.messagesBySession[sessionId];
       if (!messages) return state;
+      const nextMessages = messages.filter((m) => m.id !== messageId);
+      removeMessageFromIndex(sessionId, messageId);
+      rebuildSessionMessageIndex(sessionId, nextMessages);
       return {
         messagesBySession: {
           ...state.messagesBySession,
-          [sessionId]: messages.filter((m) => m.id !== messageId),
+          [sessionId]: nextMessages,
+        },
+        sessionMessageCountById: {
+          ...state.sessionMessageCountById,
+          [sessionId]: nextMessages.length,
         },
       };
     }),
 
   setMessages: (sessionId, messages) =>
-    set((state) => ({
-      messagesBySession: {
-        ...state.messagesBySession,
-        [sessionId]: messages,
-      },
-    })),
+    set((state) => {
+      rebuildSessionMessageIndex(sessionId, messages);
+      const startedSessionIds = new Set(state.startedSessionIds);
+      if (messages.length > 0) {
+        startedSessionIds.add(sessionId);
+      } else {
+        startedSessionIds.delete(sessionId);
+      }
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: messages,
+        },
+        sessionMessageCountById: {
+          ...state.sessionMessageCountById,
+          [sessionId]: messages.length,
+        },
+        startedSessionIds,
+      };
+    }),
 
   clearMessages: (sessionId) =>
-    set((state) => ({
-      messagesBySession: {
-        ...state.messagesBySession,
-        [sessionId]: [],
-      },
-      sessionStateById: {
-        ...state.sessionStateById,
-        [sessionId]: createInitialSessionRuntime(),
-      },
-    })),
+    set((state) => {
+      clearSessionMessageIndex(sessionId);
+      const startedSessionIds = new Set(state.startedSessionIds);
+      startedSessionIds.delete(sessionId);
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: [],
+        },
+        sessionMessageCountById: {
+          ...state.sessionMessageCountById,
+          [sessionId]: 0,
+        },
+        startedSessionIds,
+        sessionStateById: {
+          ...state.sessionStateById,
+          [sessionId]: createInitialSessionRuntime(),
+        },
+      };
+    }),
 
   // Active session helpers
   getActiveMessages: () => {
@@ -223,14 +318,150 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!streamingMessageId) return state;
       const messages = state.messagesBySession[sessionId];
       if (!messages) return state;
+      const index = getSessionMessageIndex(sessionId);
+      const messageIndex = index.messageIdToIndex.get(streamingMessageId);
+      if (messageIndex === undefined) return state;
+      const target = messages[messageIndex];
+      if (!target) return state;
+      const nextContent = [...target.content, content];
+      const nextMessages = [...messages];
+      nextMessages[messageIndex] = { ...target, content: nextContent };
+      appendContentToIndex(
+        sessionId,
+        streamingMessageId,
+        messageIndex,
+        content,
+        nextContent.length - 1,
+      );
       return {
         messagesBySession: {
           ...state.messagesBySession,
-          [sessionId]: messages.map((m) =>
-            m.id === streamingMessageId
-              ? { ...m, content: [...m.content, content] }
-              : m,
-          ),
+          [sessionId]: nextMessages,
+        },
+      };
+    }),
+
+  appendContentByMessageId: (sessionId, messageId, content) =>
+    set((state) => {
+      const messages = state.messagesBySession[sessionId];
+      if (!messages) return state;
+      const index = getSessionMessageIndex(sessionId);
+      const messageIndex = index.messageIdToIndex.get(messageId);
+      if (messageIndex === undefined) return state;
+      const message = messages[messageIndex];
+      if (!message) return state;
+      const nextContent = [...message.content, content];
+      const nextMessages = [...messages];
+      nextMessages[messageIndex] = { ...message, content: nextContent };
+      appendContentToIndex(
+        sessionId,
+        messageId,
+        messageIndex,
+        content,
+        nextContent.length - 1,
+      );
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: nextMessages,
+        },
+      };
+    }),
+
+  appendTextByMessageId: (sessionId, messageId, text) =>
+    set((state) => {
+      const messages = state.messagesBySession[sessionId];
+      if (!messages || !text) return state;
+      const messageIndex =
+        getSessionMessageIndex(sessionId).messageIdToIndex.get(messageId);
+      if (messageIndex === undefined) {
+        rebuildSessionMessageIndex(sessionId, messages);
+        const rebuiltIndex =
+          getSessionMessageIndex(sessionId).messageIdToIndex.get(messageId);
+        if (rebuiltIndex === undefined) return state;
+        const message = messages[rebuiltIndex];
+        if (!message) return state;
+        const lastContent = message.content[message.content.length - 1];
+        const nextContent =
+          lastContent?.type === "text"
+            ? [
+                ...message.content.slice(0, -1),
+                { type: "text" as const, text: lastContent.text + text },
+              ]
+            : [...message.content, { type: "text" as const, text }];
+        const nextMessages = [...messages];
+        nextMessages[rebuiltIndex] = { ...message, content: nextContent };
+        return {
+          messagesBySession: {
+            ...state.messagesBySession,
+            [sessionId]: nextMessages,
+          },
+        };
+      }
+      const message = messages[messageIndex];
+      if (!message) return state;
+      const lastContent = message.content[message.content.length - 1];
+      const nextContent =
+        lastContent?.type === "text"
+          ? [
+              ...message.content.slice(0, -1),
+              { type: "text" as const, text: lastContent.text + text },
+            ]
+          : [...message.content, { type: "text" as const, text }];
+      const nextMessages = [...messages];
+      nextMessages[messageIndex] = { ...message, content: nextContent };
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: nextMessages,
+        },
+      };
+    }),
+
+  appendToolRequest: (sessionId, messageId, toolRequest) =>
+    get().appendContentByMessageId(sessionId, messageId, toolRequest),
+
+  patchToolRequest: (sessionId, toolCallId, patch) =>
+    set((state) => {
+      const messages = state.messagesBySession[sessionId];
+      const location =
+        getSessionMessageIndex(sessionId).toolCallIdToLocation.get(toolCallId);
+      if (!messages || !location) return state;
+      const message = messages[location.messageIndex];
+      const content = message?.content[location.contentIndex];
+      if (!message || content?.type !== "toolRequest") return state;
+      const nextContent = [...message.content];
+      nextContent[location.contentIndex] = { ...content, ...patch };
+      const nextMessages = [...messages];
+      nextMessages[location.messageIndex] = {
+        ...message,
+        content: nextContent,
+      };
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: nextMessages,
+        },
+      };
+    }),
+
+  appendToolResponse: (sessionId, toolCallId, response) =>
+    set((state) => {
+      const messages = state.messagesBySession[sessionId];
+      const location =
+        getSessionMessageIndex(sessionId).toolCallIdToLocation.get(toolCallId);
+      if (!messages || !location) return state;
+      const message = messages[location.messageIndex];
+      if (!message) return state;
+      const nextMessages = [...messages];
+      nextMessages[location.messageIndex] = {
+        ...message,
+        content: [...message.content, response],
+      };
+      return {
+        messagesBySession: {
+          ...state.messagesBySession,
+          [sessionId]: nextMessages,
         },
       };
     }),
@@ -242,27 +473,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!streamingMessageId) return state;
       const messages = state.messagesBySession[sessionId];
       if (!messages) return state;
+      const messageIndex =
+        getSessionMessageIndex(sessionId).messageIdToIndex.get(
+          streamingMessageId,
+        );
+      if (messageIndex === undefined) return state;
+      const message = messages[messageIndex];
+      if (!message) return state;
+      const lastContent = message.content[message.content.length - 1];
+      const nextContent =
+        lastContent?.type !== "text"
+          ? [...message.content, { type: "text" as const, text }]
+          : [
+              ...message.content.slice(0, -1),
+              { type: "text" as const, text: lastContent.text + text },
+            ];
+      const nextMessages = [...messages];
+      nextMessages[messageIndex] = { ...message, content: nextContent };
       return {
         messagesBySession: {
           ...state.messagesBySession,
-          [sessionId]: messages.map((m) => {
-            if (m.id !== streamingMessageId) return m;
-            const lastContent = m.content[m.content.length - 1];
-            if (lastContent?.type !== "text") {
-              // Start a new text segment after non-text content so
-              // streamed tool calls stay inline between text blocks.
-              return {
-                ...m,
-                content: [...m.content, { type: "text" as const, text }],
-              };
-            }
-            const newContent = [...m.content];
-            newContent[newContent.length - 1] = {
-              type: "text" as const,
-              text: lastContent.text + text,
-            };
-            return { ...m, content: newContent };
-          }),
+          [sessionId]: nextMessages,
         },
       };
     }),
@@ -279,6 +510,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       },
     })),
+
+  setRuntimeView: (sessionId, runtimeView) =>
+    set((state) => {
+      const current =
+        state.sessionRuntimeViewById[sessionId] ?? INITIAL_SESSION_RUNTIME_VIEW;
+      return {
+        sessionRuntimeViewById: {
+          ...state.sessionRuntimeViewById,
+          [sessionId]: {
+            ...current,
+            ...runtimeView,
+          },
+        },
+      };
+    }),
 
   setError: (sessionId, error) =>
     set((state) => {
@@ -486,10 +732,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   cleanupSession: (sessionId) => {
     // Discard any orphaned replay buffer so module-level Map doesn't leak.
     clearReplayBuffer(sessionId);
+    clearSessionMessageIndex(sessionId);
+    clearSessionRuntimeBuffers(sessionId);
     set((state) => {
       const { [sessionId]: _, ...rest } = state.messagesBySession;
       const { [sessionId]: __, ...remainingSessionState } =
         state.sessionStateById;
+      const { [sessionId]: removedRuntimeView, ...remainingRuntimeViews } =
+        state.sessionRuntimeViewById;
+      void removedRuntimeView;
+      const { [sessionId]: removedCount, ...remainingMessageCounts } =
+        state.sessionMessageCountById;
+      void removedCount;
       const { [sessionId]: ___, ...remainingQueued } =
         state.queuedMessageBySession;
       const { [sessionId]: ____, ...remainingDrafts } = state.draftsBySession;
@@ -499,9 +753,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const { [sessionId]: removedTarget, ...remainingTargets } =
         state.scrollTargetMessageBySession;
       void removedTarget;
+      const startedSessionIds = new Set(state.startedSessionIds);
+      startedSessionIds.delete(sessionId);
       return {
         messagesBySession: rest,
         sessionStateById: remainingSessionState,
+        sessionRuntimeViewById: remainingRuntimeViews,
+        sessionMessageCountById: remainingMessageCounts,
+        startedSessionIds,
         queuedMessageBySession: remainingQueued,
         draftsBySession: remainingDrafts,
         skillDraftsBySession: remainingSkillDrafts,

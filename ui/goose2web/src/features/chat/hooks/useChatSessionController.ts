@@ -238,7 +238,7 @@ export function useChatSessionController({
 
         if (
           extensions.some((extension) => extension.status === "starting") ||
-          (extensions.length === 0 && attempt < 4)
+          (extensions.length === 0 && attempt < 20)
         ) {
           retryTimer = setTimeout(() => loadExtensions(attempt + 1), 1500);
         }
@@ -260,7 +260,7 @@ export function useChatSessionController({
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [effectiveProjectId, sessionId]);
+  }, [sessionId]);
 
   const prevProjectIdRef = useRef(session?.projectId);
   useEffect(() => {
@@ -497,11 +497,18 @@ export function useChatSessionController({
   const resolvedTokenState = tokenState ?? INITIAL_TOKEN_STATE;
   const supportsCompactionControls =
     supportsContextCompactionControls(selectedAgentId);
-  const isCompactingContext = chatState === "compacting";
+  const runtimeView = useChatStore((s) =>
+    sessionId ? s.sessionRuntimeViewById[sessionId] : undefined,
+  );
+  const effectiveChatState =
+    chatState === "idle" && runtimeView?.isResponding
+      ? ("streaming" as const)
+      : chatState;
+  const isCompactingContext = effectiveChatState === "compacting";
   const isLoadingHistory = useChatStore((s) =>
     sessionId
-      ? s.loadingSessionIds.has(sessionId) &&
-        (s.messagesBySession[sessionId]?.length ?? 0) === 0
+      ? s.sessionRuntimeViewById[sessionId]?.phase === "hydrating" &&
+        (s.sessionMessageCountById[sessionId] ?? 0) === 0
       : false,
   );
   const deferredSend = useRef<{
@@ -512,7 +519,7 @@ export function useChatSessionController({
   } | null>(null);
   const queue = useMessageQueue(
     stateSessionId,
-    sessionId ? chatState : "thinking",
+    sessionId ? effectiveChatState : "thinking",
     (...args) => {
       void sendMessage(...args);
     },
@@ -544,7 +551,7 @@ export function useChatSessionController({
         });
       }
 
-      if (chatState !== "idle" && !queue.queuedMessage) {
+      if (effectiveChatState !== "idle" && !queue.queuedMessage) {
         queue.enqueue(text, personaId, attachments, sendOptions);
         return true;
       }
@@ -557,7 +564,7 @@ export function useChatSessionController({
       return true;
     },
     [
-      chatState,
+      effectiveChatState,
       handlePersonaChange,
       ensureSession,
       queue,
@@ -767,13 +774,15 @@ export function useChatSessionController({
     project,
     sessionArtifactCwd,
     messages,
-    chatState,
+    chatState: effectiveChatState,
     tokenState: resolvedTokenState,
     stopStreaming,
     streamingMessageId,
     compactConversation,
     canCompactContext:
-      supportsCompactionControls && messages.length > 0 && chatState === "idle",
+      supportsCompactionControls &&
+      messages.length > 0 &&
+      effectiveChatState === "idle",
     isCompactingContext,
     supportsCompactionControls,
     isContextUsageReady:

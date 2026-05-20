@@ -33,3 +33,7 @@ pub use subagent_handler::SUBAGENT_TOOL_REQUEST_TYPE;
 pub use subagent_task_config::TaskConfig;
 pub use tool_execution::ToolCallContext;
 pub use types::{FrontendTool, RetryConfig, SessionConfig, SuccessCheck};
+
+pub async fn shutdown_streamable_http_backends() {
+    streamable_http_backend::shutdown_all_backends().await;
+}

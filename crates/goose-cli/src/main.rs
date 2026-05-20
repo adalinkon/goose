@@ -8,6 +8,8 @@ async fn run() -> Result<()> {
 
     let result = cli().await;
 
+    goose::agents::shutdown_streamable_http_backends().await;
+
     #[cfg(feature = "otel")]
     if goose::otel::otlp::is_otlp_initialized() {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;

@@ -3,11 +3,12 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 use tracing::warn;
 
 use crate::agents::extension::{ExtensionError, ExtensionResult, StreamableHttpBackendConfig};
@@ -26,10 +27,19 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-static BACKENDS: Lazy<Mutex<HashMap<String, Arc<BackendSlot>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static DEFAULT_REGISTRY: Lazy<StreamableHttpBackendRegistry> =
+    Lazy::new(StreamableHttpBackendRegistry::default);
 
-const DEFAULT_BACKEND_IDLE_TIMEOUT_SECS: u64 = 300;
+const BACKEND_TERMINATION_GRACE_SECS: u64 = 3;
+#[cfg(unix)]
+const SIGTERM: std::os::raw::c_int = 15;
+#[cfg(unix)]
+const SIGKILL: std::os::raw::c_int = 9;
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn kill(pid: std::os::raw::c_int, sig: std::os::raw::c_int) -> std::os::raw::c_int;
+}
 
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct BackendTemplateContext {
@@ -48,12 +58,15 @@ pub(crate) struct BackendLease {
 
 pub(crate) struct BackendMcpClient {
     inner: Arc<dyn McpClientTrait>,
-    lease: BackendLease,
+    _lease: BackendLease,
 }
 
 impl BackendMcpClient {
     pub(crate) fn new(inner: Arc<dyn McpClientTrait>, lease: BackendLease) -> Self {
-        Self { inner, lease }
+        Self {
+            inner,
+            _lease: lease,
+        }
     }
 }
 
@@ -65,7 +78,6 @@ impl McpClientTrait for BackendMcpClient {
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
     ) -> Result<ListToolsResult, ServiceError> {
-        self.lease.touch().await;
         self.inner
             .list_tools(session_id, next_cursor, cancel_token)
             .await
@@ -78,7 +90,6 @@ impl McpClientTrait for BackendMcpClient {
         arguments: Option<JsonObject>,
         cancel_token: CancellationToken,
     ) -> Result<CallToolResult, ServiceError> {
-        self.lease.touch().await;
         self.inner
             .call_tool(ctx, name, arguments, cancel_token)
             .await
@@ -94,7 +105,6 @@ impl McpClientTrait for BackendMcpClient {
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
     ) -> Result<ListResourcesResult, ServiceError> {
-        self.lease.touch().await;
         self.inner
             .list_resources(session_id, next_cursor, cancel_token)
             .await
@@ -106,7 +116,6 @@ impl McpClientTrait for BackendMcpClient {
         uri: &str,
         cancel_token: CancellationToken,
     ) -> Result<ReadResourceResult, ServiceError> {
-        self.lease.touch().await;
         self.inner
             .read_resource(session_id, uri, cancel_token)
             .await
@@ -118,7 +127,6 @@ impl McpClientTrait for BackendMcpClient {
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
     ) -> Result<ListPromptsResult, ServiceError> {
-        self.lease.touch().await;
         self.inner
             .list_prompts(session_id, next_cursor, cancel_token)
             .await
@@ -131,7 +139,6 @@ impl McpClientTrait for BackendMcpClient {
         arguments: Value,
         cancel_token: CancellationToken,
     ) -> Result<GetPromptResult, ServiceError> {
-        self.lease.touch().await;
         self.inner
             .get_prompt(session_id, name, arguments, cancel_token)
             .await
@@ -142,7 +149,6 @@ impl McpClientTrait for BackendMcpClient {
     }
 
     async fn get_moim(&self, session_id: &str) -> Option<String> {
-        self.lease.touch().await;
         self.inner.get_moim(session_id).await
     }
 
@@ -155,13 +161,6 @@ impl BackendLease {
     pub(crate) fn port(&self) -> u16 {
         self.port
     }
-
-    pub(crate) async fn touch(&self) {
-        let mut state = self.slot.state.lock().await;
-        if let Some(process) = state.process.as_mut() {
-            process.last_activity = Instant::now();
-        }
-    }
 }
 
 impl Drop for BackendLease {
@@ -170,10 +169,15 @@ impl Drop for BackendLease {
         let slot = Arc::clone(&self.slot);
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                release_backend(id, slot).await;
+                DEFAULT_REGISTRY.release(id, slot).await;
             });
         }
     }
+}
+
+#[derive(Default)]
+pub(crate) struct StreamableHttpBackendRegistry {
+    backends: Mutex<HashMap<String, Arc<BackendSlot>>>,
 }
 
 struct BackendSlot {
@@ -187,10 +191,17 @@ struct BackendState {
 
 struct BackendProcess {
     child: Child,
+    pid: Option<u32>,
     port: u16,
     refs: usize,
-    last_activity: Instant,
-    idle_timeout: Duration,
+}
+
+impl Drop for BackendProcess {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        terminate_process_group(self.pid, SIGTERM);
+        let _ = self.child.start_kill();
+    }
 }
 
 pub(crate) fn render_backend_template(
@@ -233,69 +244,119 @@ pub(crate) async fn acquire_backend(
     context: &BackendTemplateContext,
     working_dir: &Path,
 ) -> ExtensionResult<BackendLease> {
-    let rendered_id = render_backend_template(
-        &crate::agents::extension_manager::substitute_env_vars(&backend.id, envs),
-        context,
-    )?;
-    if rendered_id.trim().is_empty() {
-        return Err(ExtensionError::ConfigError(
-            "streamable_http backend id must not render to an empty string".to_string(),
-        ));
-    }
+    DEFAULT_REGISTRY
+        .acquire(backend, envs, context, working_dir)
+        .await
+}
 
-    let slot = {
-        let mut backends = BACKENDS.lock().await;
-        backends
-            .entry(rendered_id.clone())
-            .or_insert_with(|| {
-                Arc::new(BackendSlot {
-                    state: Mutex::new(BackendState::default()),
-                })
-            })
-            .clone()
-    };
-
-    let mut state = slot.state.lock().await;
-    if let Some(process) = state.process.as_mut() {
-        if process.child.try_wait()?.is_none() {
-            process.refs += 1;
-            process.last_activity = Instant::now();
-            let port = process.port;
-            drop(state);
-            return Ok(BackendLease {
-                id: rendered_id,
-                slot,
-                port,
-            });
+impl StreamableHttpBackendRegistry {
+    async fn acquire(
+        &'static self,
+        backend: &StreamableHttpBackendConfig,
+        envs: &HashMap<String, String>,
+        context: &BackendTemplateContext,
+        working_dir: &Path,
+    ) -> ExtensionResult<BackendLease> {
+        let rendered_id = render_backend_template(
+            &crate::agents::extension_manager::substitute_env_vars(&backend.id, envs),
+            context,
+        )?;
+        if rendered_id.trim().is_empty() {
+            return Err(ExtensionError::ConfigError(
+                "streamable_http backend id must not render to an empty string".to_string(),
+            ));
         }
-        state.process = None;
+
+        let slot = {
+            let mut backends = self.backends.lock().await;
+            backends
+                .entry(rendered_id.clone())
+                .or_insert_with(|| {
+                    Arc::new(BackendSlot {
+                        state: Mutex::new(BackendState::default()),
+                    })
+                })
+                .clone()
+        };
+
+        let mut state = slot.state.lock().await;
+        if let Some(process) = state.process.as_mut() {
+            if process.child.try_wait()?.is_none() {
+                process.refs += 1;
+                let port = process.port;
+                drop(state);
+                return Ok(BackendLease {
+                    id: rendered_id,
+                    slot,
+                    port,
+                });
+            }
+            state.process = None;
+        }
+
+        let port = reserve_port()?;
+        let context = context_with_port(context.clone(), port);
+        let mut command = build_command(backend, envs, &context, working_dir).await?;
+        let child = command.spawn()?;
+        let pid = child.id();
+
+        state.process = Some(BackendProcess {
+            child,
+            pid,
+            port,
+            refs: 1,
+        });
+        drop(state);
+
+        Ok(BackendLease {
+            id: rendered_id,
+            slot,
+            port,
+        })
     }
 
-    let port = reserve_port()?;
-    let context = context_with_port(context.clone(), port);
-    let mut command = build_command(backend, envs, &context, working_dir).await?;
-    let child = command.spawn()?;
+    async fn release(&self, id: String, slot: Arc<BackendSlot>) {
+        let mut state = slot.state.lock().await;
+        let Some(process) = state.process.as_mut() else {
+            return;
+        };
 
-    state.process = Some(BackendProcess {
-        child,
-        port,
-        refs: 1,
-        last_activity: Instant::now(),
-        idle_timeout: Duration::from_secs(
-            backend
-                .idle_timeout
-                .unwrap_or(DEFAULT_BACKEND_IDLE_TIMEOUT_SECS),
-        ),
-    });
-    drop(state);
+        process.refs = process.refs.saturating_sub(1);
+        if process.refs > 0 {
+            return;
+        }
 
-    spawn_idle_monitor(rendered_id.clone(), Arc::clone(&slot));
+        if let Some(process) = state.process.take() {
+            terminate_backend_process(process).await;
+        }
+        drop(state);
 
-    Ok(BackendLease {
-        id: rendered_id,
-        slot,
-        port,
-    })
+        self.remove_slot_if_current(&id, &slot).await;
+    }
+
+    async fn remove_slot_if_current(&self, id: &str, slot: &Arc<BackendSlot>) {
+        let mut backends = self.backends.lock().await;
+        if backends
+            .get(id)
+            .is_some_and(|existing| Arc::ptr_eq(existing, slot))
+        {
+            backends.remove(id);
+        }
+    }
+
+    async fn shutdown_all(&self) {
+        let slots = {
+            let mut backends = self.backends.lock().await;
+            backends.drain().map(|(_, slot)| slot).collect::<Vec<_>>()
+        };
+
+        for slot in slots {
+            let mut state = slot.state.lock().await;
+            if let Some(process) = state.process.take() {
+                terminate_backend_process(process).await;
+            }
+        }
+    }
 }
 
 async fn build_command(
@@ -334,7 +395,8 @@ async fn build_command(
         .envs(rendered_envs)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
     configure_subprocess(&mut command);
 
     if let Ok(path) = SearchPaths::builder().path() {
@@ -353,85 +415,50 @@ async fn build_command(
     Ok(command)
 }
 
-async fn release_backend(id: String, slot: Arc<BackendSlot>) {
-    let mut state = slot.state.lock().await;
-    let Some(process) = state.process.as_mut() else {
-        return;
-    };
-
-    process.refs = process.refs.saturating_sub(1);
-    process.last_activity = Instant::now();
-    if process.refs > 0 {
-        return;
-    }
-
-    if let Some(mut process) = state.process.take() {
-        let _ = process.child.start_kill();
-        let _ = process.child.wait().await;
-    }
-    drop(state);
-
-    let mut backends = BACKENDS.lock().await;
-    if backends
-        .get(&id)
-        .is_some_and(|existing| Arc::ptr_eq(existing, &slot))
-    {
-        backends.remove(&id);
-    }
-}
-
-fn spawn_idle_monitor(id: String, slot: Arc<BackendSlot>) {
-    tokio::spawn(async move {
-        loop {
-            let sleep_for = {
-                let mut state = slot.state.lock().await;
-                let Some(process) = state.process.as_mut() else {
-                    break;
-                };
-
-                match process.child.try_wait() {
-                    Ok(Some(_)) => {
-                        state.process = None;
-                        None
-                    }
-                    Ok(None) if process.last_activity.elapsed() >= process.idle_timeout => {
-                        if let Some(mut process) = state.process.take() {
-                            let _ = process.child.start_kill();
-                            let _ = process.child.wait().await;
-                        }
-                        None
-                    }
-                    Ok(None) => {
-                        let remaining = process
-                            .idle_timeout
-                            .saturating_sub(process.last_activity.elapsed());
-                        Some(remaining.min(Duration::from_secs(30)))
-                    }
-                    Err(e) => {
-                        warn!("Failed to poll streamable HTTP backend '{}': {}", id, e);
-                        state.process = None;
-                        None
-                    }
-                }
-            };
-
-            if let Some(duration) = sleep_for {
-                tokio::time::sleep(duration).await;
-            } else {
-                let mut backends = BACKENDS.lock().await;
-                if backends
-                    .get(&id)
-                    .is_some_and(|existing| Arc::ptr_eq(existing, &slot))
-                {
-                    backends.remove(&id);
-                }
-                break;
-            }
-        }
-    });
-}
-
 fn reserve_port() -> ExtensionResult<u16> {
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
     Ok(listener.local_addr()?.port())
+}
+
+pub(crate) async fn shutdown_all_backends() {
+    DEFAULT_REGISTRY.shutdown_all().await;
+}
+
+async fn terminate_backend_process(mut process: BackendProcess) {
+    #[cfg(unix)]
+    terminate_process_group(process.pid, SIGTERM);
+    let _ = process.child.start_kill();
+
+    if timeout(
+        Duration::from_secs(BACKEND_TERMINATION_GRACE_SECS),
+        process.child.wait(),
+    )
+    .await
+    .is_ok()
+    {
+        process.pid = None;
+        return;
+    }
+
+    #[cfg(unix)]
+    terminate_process_group(process.pid, SIGKILL);
+    let _ = process.child.start_kill();
+    let _ = process.child.wait().await;
+    process.pid = None;
+}
+
+#[cfg(unix)]
+fn terminate_process_group(pid: Option<u32>, signal: std::os::raw::c_int) {
+    let Some(pid) = pid else {
+        return;
+    };
+
+    if pid > std::os::raw::c_int::MAX as u32 {
+        return;
+    }
+
+    unsafe {
+        let pgid = -(pid as std::os::raw::c_int);
+        let _ = kill(pgid, signal);
+    }
 }

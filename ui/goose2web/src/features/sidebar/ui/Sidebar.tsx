@@ -20,12 +20,12 @@ import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useChatStore } from "@/features/chat/stores/chatStore";
 import {
-  selectMessagesBySession,
+  selectSessionMessageCountById,
   selectSessionStateById,
 } from "@/features/chat/stores/chatSelectors";
 import { INITIAL_SESSION_CHAT_RUNTIME } from "@/shared/types/chat";
 import {
-  getVisibleSessions,
+  getVisibleSessionsByMessageCount,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
 import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
@@ -159,7 +159,7 @@ export function Sidebar({
     }
   });
 
-  const messagesBySession = useChatStore(selectMessagesBySession);
+  const sessionMessageCountById = useChatStore(selectSessionMessageCountById);
   const [serversDialogOpen, setServersDialogOpen] = useState(false);
   const [activeServerName, setActiveServerName] = useState<string | null>(() =>
     getActiveBackendServerName(),
@@ -173,7 +173,10 @@ export function Sidebar({
   const sessions = useChatSessionStore(selectSessions);
   const getPersonaById = useAgentStore((s) => s.getPersonaById);
   const projectStoreProjects = useProjectStore(selectProjects);
-  const visibleSessions = getVisibleSessions(sessions, messagesBySession);
+  const visibleSessions = getVisibleSessionsByMessageCount(
+    sessions,
+    sessionMessageCountById,
+  );
   const activeSessions = visibleSessions.filter(
     (session) => !session.archivedAt,
   );

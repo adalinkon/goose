@@ -52,7 +52,6 @@ export interface StreamableHttpBackendConfig {
   envs?: Record<string, string>;
   env_keys?: string[];
   timeout?: number;
-  idle_timeout?: number;
 }
 
 export interface SseExtensionConfig {

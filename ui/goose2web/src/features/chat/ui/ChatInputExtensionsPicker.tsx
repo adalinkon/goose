@@ -16,6 +16,18 @@ interface ChatInputExtensionsPickerProps {
   isCompact?: boolean;
 }
 
+function extensionStatusClassName(status: SessionExtensionInfo["status"]) {
+  switch (status) {
+    case "running":
+      return "bg-border-success";
+    case "starting":
+      return "bg-border-warning";
+    case "failed":
+    case "stopped":
+      return "bg-destructive";
+  }
+}
+
 export function ChatInputExtensionsPicker({
   extensions,
   loading = false,
@@ -99,7 +111,7 @@ export function ChatInputExtensionsPicker({
             <span
               className={cn(
                 "ml-1 size-1.5 shrink-0 rounded-full",
-                error || hasFailed ? "bg-destructive" : "bg-warning",
+                error || hasFailed ? "bg-destructive" : "bg-text-warning",
               )}
             />
           ) : null}
@@ -158,7 +170,16 @@ export function ChatInputExtensionsPicker({
                           }
                           selected={isSelected}
                           data-selected={isSelected || undefined}
+                          title={t(
+                            `toolbar.extensionStatus.${extension.status}`,
+                          )}
                         >
+                          <span
+                            className={cn(
+                              "size-2 shrink-0 rounded-full",
+                              extensionStatusClassName(extension.status),
+                            )}
+                          />
                           <span className="min-w-0 flex-1 truncate">
                             {extension.name}
                           </span>

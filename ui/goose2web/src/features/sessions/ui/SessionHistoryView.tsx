@@ -9,12 +9,12 @@ import { SessionCard } from "./SessionCard";
 import { groupSessionsByDate } from "../lib/groupSessionsByDate";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import {
-  getVisibleSessions,
+  getVisibleSessionsByMessageCount,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
 import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
 import { useChatStore } from "@/features/chat/stores/chatStore";
-import { selectMessagesBySession } from "@/features/chat/stores/chatSelectors";
+import { selectSessionMessageCountById } from "@/features/chat/stores/chatSelectors";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import {
@@ -44,14 +44,15 @@ export function SessionHistoryView({
 }: SessionHistoryViewProps) {
   const { t, i18n } = useTranslation(["sessions", "common"]);
   const sessions = useChatSessionStore(selectSessions);
-  const messagesBySession = useChatStore(selectMessagesBySession);
+  const sessionMessageCountById = useChatStore(selectSessionMessageCountById);
   const loadSessions = useChatSessionStore((s) => s.loadSessions);
   const activeSessions = useMemo(
     () =>
-      getVisibleSessions(sessions, messagesBySession).filter(
-        (session) => !session.archivedAt,
-      ),
-    [messagesBySession, sessions],
+      getVisibleSessionsByMessageCount(
+        sessions,
+        sessionMessageCountById,
+      ).filter((session) => !session.archivedAt),
+    [sessionMessageCountById, sessions],
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 

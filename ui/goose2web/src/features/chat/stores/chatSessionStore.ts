@@ -53,6 +53,16 @@ export function getVisibleSessions<
   );
 }
 
+export function getVisibleSessionsByMessageCount<
+  T extends Pick<ChatSession, "id" | "messageCount">,
+>(sessions: T[], sessionMessageCountById: Record<string, number>): T[] {
+  return sessions.filter(
+    (session) =>
+      session.messageCount > 0 ||
+      (sessionMessageCountById[session.id] ?? 0) > 0,
+  );
+}
+
 interface ChatSessionStoreState {
   sessions: ChatSession[];
   activeSessionId: string | null;

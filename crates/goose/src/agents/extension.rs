@@ -162,8 +162,6 @@ pub struct StreamableHttpBackendConfig {
     pub env_keys: Vec<String>,
     /// Startup timeout in seconds.
     pub timeout: Option<u64>,
-    /// Idle timeout in seconds after the last backend activity.
-    pub idle_timeout: Option<u64>,
 }
 
 /// Represents the different types of MCP extensions that can be added to the manager
@@ -513,7 +511,6 @@ impl ExtensionConfig {
                         envs: Envs::new(backend_merged),
                         env_keys: vec![],
                         timeout: backend.timeout,
-                        idle_timeout: backend.idle_timeout,
                     })
                 } else {
                     None

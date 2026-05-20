@@ -8374,13 +8374,6 @@
             "type": "string",
             "description": "Template-rendered sharing key for this backend process."
           },
-          "idle_timeout": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Idle timeout in seconds after the last backend activity.",
-            "nullable": true,
-            "minimum": 0
-          },
           "timeout": {
             "type": "integer",
             "format": "int64",

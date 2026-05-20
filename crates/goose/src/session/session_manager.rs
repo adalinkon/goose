@@ -3,7 +3,7 @@ use crate::config::GooseMode;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::model::ModelConfig;
-use crate::providers::base::{Provider, MSG_COUNT_FOR_SESSION_NAME_GENERATION};
+use crate::providers::base::Provider;
 use crate::recipe::Recipe;
 use crate::session::extension_data::ExtensionData;
 use anyhow::Result;
@@ -399,7 +399,7 @@ impl SessionManager {
             .filter(|m| matches!(m.role, Role::User))
             .count();
 
-        if user_message_count <= MSG_COUNT_FOR_SESSION_NAME_GENERATION {
+        if user_message_count == 1 {
             let name = provider.generate_session_name(id, &conversation).await?;
             self.update(id)
                 .system_generated_name(name.clone())
@@ -1818,10 +1818,40 @@ fn merge_tool_meta(
 mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
+    use crate::providers::base::{stream_from_single_message, MessageStream, ProviderUsage, Usage};
+    use crate::providers::errors::ProviderError;
+    use rmcp::model::Tool;
     use tempfile::TempDir;
     use test_case::test_case;
 
     const NUM_CONCURRENT_SESSIONS: i32 = 10;
+
+    struct NamingTestProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for NamingTestProvider {
+        fn get_name(&self) -> &str {
+            "naming-test"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &ModelConfig,
+            _session_id: &str,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            Ok(stream_from_single_message(
+                Message::assistant().with_text("Generated Test Title"),
+                ProviderUsage::new("test-model".to_string(), Usage::new(None, None, None)),
+            ))
+        }
+
+        fn get_model_config(&self) -> ModelConfig {
+            ModelConfig::new("test-model").unwrap()
+        }
+    }
 
     async fn run_lock_upgrade_attempt(
         pool: Pool<Sqlite>,
@@ -1913,6 +1943,59 @@ mod tests {
                 .filter_map(|r| r.as_ref().err().map(ToString::to_string))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[tokio::test]
+    async fn maybe_update_name_only_runs_for_first_user_message() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let provider: Arc<dyn Provider> = Arc::new(NamingTestProvider);
+
+        let session = session_manager
+            .create_session(
+                PathBuf::from("/tmp/name-once-test"),
+                "New Chat".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        session_manager
+            .add_message(&session.id, &Message::user().with_text("first"))
+            .await
+            .unwrap();
+
+        let first_update = session_manager
+            .maybe_update_name(&session.id, provider.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            first_update.as_ref().map(|update| update.name.as_str()),
+            Some("Generated Test Title")
+        );
+
+        session_manager
+            .add_message(&session.id, &Message::assistant().with_text("reply"))
+            .await
+            .unwrap();
+        session_manager
+            .add_message(&session.id, &Message::user().with_text("second"))
+            .await
+            .unwrap();
+
+        let second_update = session_manager
+            .maybe_update_name(&session.id, provider)
+            .await
+            .unwrap();
+        assert!(second_update.is_none());
+
+        let session = session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        assert_eq!(session.name, "Generated Test Title");
+        assert!(!session.user_set_name);
     }
 
     #[tokio::test]
