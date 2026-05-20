@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Sidebar } from "@/features/sidebar/ui/Sidebar";
 import { CreateProjectDialog } from "@/features/projects/ui/CreateProjectDialog";
@@ -68,49 +69,83 @@ const SIDEBAR_MAX_WIDTH = 380;
 const SIDEBAR_SNAP_COLLAPSE_THRESHOLD = 100;
 const SIDEBAR_COLLAPSED_WIDTH = 48;
 
-function getInitialSettingsSection(): SectionId | null {
-  if (typeof window === "undefined") return null;
-  if (window.location.pathname !== "/settings") return null;
-  const section = new URLSearchParams(window.location.search).get("section");
-  if (!section) return DEFAULT_SETTINGS_SECTION;
-  return normalizeSettingsSection(section);
-}
+const VIEW_PATHS: Partial<Record<AppView, string>> = {
+  home: "/",
+  agents: "/agents",
+  recipes: "/recipes",
+  skills: "/skills",
+  extensions: "/extensions",
+  projects: "/projects",
+  "session-history": "/sessions",
+};
 
-function setSettingsSectionUrl(section: SectionId) {
-  if (typeof window === "undefined") return;
-  const url = new URL(window.location.href);
-  url.pathname = "/settings";
-  url.searchParams.set("section", section);
-  window.history.replaceState(window.history.state, "", url);
-}
-
-function clearSettingsSectionUrl() {
-  if (typeof window === "undefined") return;
-  const url = new URL(window.location.href);
-  if (url.pathname === "/settings") {
-    url.pathname = "/";
+function normalizePathname(pathname: string): string {
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    return pathname.slice(0, -1);
   }
-  url.searchParams.delete("section");
-  window.history.replaceState(window.history.state, "", url);
+  return pathname;
+}
+
+function getRouteSessionId(pathname: string): string | null {
+  const match = normalizePathname(pathname).match(/^\/chat\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function getActiveViewFromPathname(pathname: string): AppView {
+  const normalized = normalizePathname(pathname);
+  if (normalized === "/settings") return "settings";
+  if (getRouteSessionId(normalized)) return "chat";
+  const match = Object.entries(VIEW_PATHS).find(
+    ([, path]) => path === normalized,
+  );
+  return (match?.[0] as AppView | undefined) ?? "home";
+}
+
+function isKnownPathname(pathname: string): boolean {
+  const normalized = normalizePathname(pathname);
+  return (
+    normalized === "/settings" ||
+    getRouteSessionId(normalized) !== null ||
+    Object.values(VIEW_PATHS).includes(normalized)
+  );
+}
+
+function getSettingsPath(section: SectionId): string {
+  return `/settings?section=${encodeURIComponent(section)}`;
+}
+
+function getChatPath(sessionId: string): string {
+  return `/chat/${encodeURIComponent(sessionId)}`;
+}
+
+function getSettingsSection(search: string): SectionId {
+  const section = new URLSearchParams(search).get("section");
+  return section ? normalizeSettingsSection(section) : DEFAULT_SETTINGS_SECTION;
+}
+
+function getViewPath(view: AppView): string {
+  if (view === "settings") return getSettingsPath(DEFAULT_SETTINGS_SECTION);
+  return VIEW_PATHS[view] ?? "/";
 }
 
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const { t } = useTranslation("chat");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeView = getActiveViewFromPathname(location.pathname);
+  const activeSettingsSection =
+    activeView === "settings"
+      ? getSettingsSection(location.search)
+      : DEFAULT_SETTINGS_SECTION;
+  const routeSessionId = getRouteSessionId(location.pathname);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const initialSettingsSection = getInitialSettingsSection();
-  const [activeSettingsSection, setActiveSettingsSection] = useState<SectionId>(
-    initialSettingsSection ?? DEFAULT_SETTINGS_SECTION,
-  );
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [createProjectInitialWorkingDir, setCreateProjectInitialWorkingDir] =
     useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<ProjectInfo | null>(
     null,
-  );
-  const [activeView, setActiveView] = useState<AppView>(
-    initialSettingsSection ? "settings" : "home",
   );
   const [homeSessionId, setHomeSessionId] = useState<string | null>(() =>
     loadStoredHomeSessionId(),
@@ -136,7 +171,8 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   const pendingProjectCreatedRef = useRef<((projectId: string) => void) | null>(
     null,
   );
-  const lastNonSettingsViewRef = useRef<AppView>("home");
+  const lastNonSettingsPathRef = useRef("/");
+  const lastSyncedRouteSessionIdRef = useRef<string | null>(null);
   const homeSessionRequestRef = useRef<Promise<ChatSession | null> | null>(
     null,
   );
@@ -196,13 +232,21 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   }, [activeSessionId, activeView]);
 
   useEffect(() => {
-    if (activeView !== "settings") {
-      lastNonSettingsViewRef.current = activeView;
+    if (!isKnownPathname(location.pathname)) {
+      navigate("/", { replace: true });
     }
-  }, [activeView]);
+  }, [location.pathname, navigate]);
 
-  const activeSession = activeSessionId
-    ? sessions.find((session) => session.id === activeSessionId)
+  useEffect(() => {
+    if (activeView !== "settings") {
+      lastNonSettingsPathRef.current = `${location.pathname}${location.search}`;
+    }
+  }, [activeView, location.pathname, location.search]);
+
+  const visibleActiveSessionId =
+    activeView === "chat" ? (routeSessionId ?? activeSessionId) : null;
+  const activeSession = visibleActiveSessionId
+    ? sessions.find((session) => session.id === visibleActiveSessionId)
     : undefined;
   const homeSession = homeSessionId
     ? sessions.find((session) => session.id === homeSessionId)
@@ -383,9 +427,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
 
       if (existingDraft) {
         setActiveSession(existingDraft.id);
-        clearSettingsSectionUrl();
-        setActiveView("chat");
         setChatActiveSession(existingDraft.id);
+        lastSyncedRouteSessionIdRef.current = existingDraft.id;
+        navigate(getChatPath(existingDraft.id));
         perfLog(
           `[perf:newtab] ${existingDraft.id.slice(0, 8)} reused draft in ${(performance.now() - tStart).toFixed(1)}ms`,
         );
@@ -402,9 +446,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         modelName: sessionModelPreference.modelName,
       });
       setActiveSession(session.id);
-      clearSettingsSectionUrl();
-      setActiveView("chat");
       setChatActiveSession(session.id);
+      lastSyncedRouteSessionIdRef.current = session.id;
+      navigate(getChatPath(session.id));
       perfLog(
         `[perf:newtab] ${session.id.slice(0, 8)} created session in ${(performance.now() - tStart).toFixed(1)}ms`,
       );
@@ -416,6 +460,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       providerInventoryEntries,
       setActiveSession,
       setChatActiveSession,
+      navigate,
     ],
   );
 
@@ -471,35 +516,39 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     (sessionId: string) => {
       cleanupChatSession(sessionId);
       setActiveSession(null);
-      clearSettingsSectionUrl();
-      setActiveView("home");
+      lastSyncedRouteSessionIdRef.current = null;
+      navigate("/");
     },
-    [cleanupChatSession, setActiveSession],
+    [cleanupChatSession, setActiveSession, navigate],
   );
   const openSettings = useCallback(
     (section: SectionId = DEFAULT_SETTINGS_SECTION) => {
       if (activeView !== "settings") {
-        lastNonSettingsViewRef.current = activeView;
+        lastNonSettingsPathRef.current = `${location.pathname}${location.search}`;
       }
-      setActiveSettingsSection(section);
-      setSettingsSectionUrl(section);
-      setActiveView("settings");
+      navigate(getSettingsPath(section), {
+        replace: activeView === "settings",
+      });
       if (sidebarCollapsed) {
         setSidebarCollapsed(false);
       }
     },
-    [activeView, sidebarCollapsed],
+    [
+      activeView,
+      location.pathname,
+      location.search,
+      navigate,
+      sidebarCollapsed,
+    ],
   );
 
   const leaveSettings = useCallback(() => {
-    clearSettingsSectionUrl();
-    setActiveView(lastNonSettingsViewRef.current);
-  }, []);
+    navigate(lastNonSettingsPathRef.current || "/", { replace: true });
+  }, [navigate]);
 
   const selectSettingsSection = useCallback((section: SectionId) => {
-    setActiveSettingsSection(section);
-    setSettingsSectionUrl(section);
-  }, []);
+    navigate(getSettingsPath(section), { replace: true });
+  }, [navigate]);
 
   useEffect(() => {
     const handleOpenSettingsEvent = (event: Event) => {
@@ -540,13 +589,13 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         }
 
         setActiveSession(null);
-        clearSettingsSectionUrl();
-        setActiveView("home");
+        lastSyncedRouteSessionIdRef.current = null;
+        navigate("/");
       } catch {
         // best-effort
       }
     },
-    [archiveSession, cleanupChatSession, setActiveSession],
+    [archiveSession, cleanupChatSession, setActiveSession, navigate],
   );
 
   const handleEditProject = useCallback(
@@ -625,24 +674,24 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         setHomeSessionId(null);
       }
       setActiveSession(sessionId);
-      clearSettingsSectionUrl();
-      setActiveView("chat");
       setChatActiveSession(sessionId);
+      lastSyncedRouteSessionIdRef.current = sessionId;
+      navigate(getChatPath(sessionId));
       useChatStore.getState().markSessionRead(sessionId);
     },
-    [homeSessionId, setActiveSession, setChatActiveSession],
+    [homeSessionId, setActiveSession, setChatActiveSession, navigate],
   );
 
   const handleSelectSession = useCallback(
     (id: string) => {
       setActiveSession(id);
-      clearSettingsSectionUrl();
-      setActiveView("chat");
       setChatActiveSession(id);
+      lastSyncedRouteSessionIdRef.current = id;
+      navigate(getChatPath(id));
       useChatStore.getState().markSessionRead(id);
       loadSessionMessages(id);
     },
-    [setActiveSession, setChatActiveSession, loadSessionMessages],
+    [setActiveSession, setChatActiveSession, navigate, loadSessionMessages],
   );
 
   const handleSelectSearchResult = useCallback(
@@ -657,6 +706,56 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     [handleSelectSession],
   );
 
+  useEffect(() => {
+    if (activeView !== "chat" || !routeSessionId) {
+      return;
+    }
+    if (!hasHydratedSessions || sessionsLoading) {
+      return;
+    }
+
+    const routeSession = sessions.find(
+      (session) => session.id === routeSessionId,
+    );
+    if (!routeSession) {
+      setActiveSession(null);
+      navigate("/", { replace: true });
+      return;
+    }
+
+    if (activeSessionId !== routeSessionId) {
+      setActiveSession(routeSessionId);
+    }
+    setChatActiveSession(routeSessionId);
+    useChatStore.getState().markSessionRead(routeSessionId);
+
+    if (lastSyncedRouteSessionIdRef.current !== routeSessionId) {
+      lastSyncedRouteSessionIdRef.current = routeSessionId;
+      loadSessionMessages(routeSessionId);
+    }
+  }, [
+    activeView,
+    activeSessionId,
+    hasHydratedSessions,
+    loadSessionMessages,
+    navigate,
+    routeSessionId,
+    sessions,
+    sessionsLoading,
+    setActiveSession,
+    setChatActiveSession,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeView !== "chat" &&
+      activeView !== "settings" &&
+      activeSessionId
+    ) {
+      setActiveSession(null);
+    }
+  }, [activeSessionId, activeView, setActiveSession]);
+
   const handleNavigate = useCallback(
     (view: AppView) => {
       if (view === "settings") {
@@ -666,10 +765,9 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       if (view !== "chat") {
         setActiveSession(null);
       }
-      clearSettingsSectionUrl();
-      setActiveView(view);
+      navigate(getViewPath(view));
     },
-    [openSettings, setActiveSession],
+    [openSettings, setActiveSession, navigate],
   );
 
   const handleCreatePersona = useCreatePersonaNavigation(() =>
@@ -774,8 +872,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       if (e.key === "n" && e.metaKey) {
         e.preventDefault();
         setActiveSession(null);
-        clearSettingsSectionUrl();
-        setActiveView("home");
+        navigate("/");
       }
     };
     window.addEventListener("keydown", handler);
@@ -784,6 +881,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     activeView,
     clearActiveSession,
     leaveSettings,
+    navigate,
     openSettings,
     setActiveSession,
     toggleSidebar,
@@ -821,8 +919,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             onNewChatInProject={handleNewChatInProject}
             onNewChat={() => {
               setActiveSession(null);
-              clearSettingsSectionUrl();
-              setActiveView("home");
+              navigate("/");
             }}
             onCreateProject={() => openCreateProjectDialog()}
             onEditProject={handleEditProject}
@@ -835,7 +932,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
             onSelectSearchResult={handleSelectSearchResult}
             activeView={activeView}
             activeSettingsSection={activeSettingsSection}
-            activeSessionId={activeSessionId}
+            activeSessionId={visibleActiveSessionId}
             projects={projects}
             className="h-full"
           />
