@@ -128,8 +128,29 @@ export const zGetSessionExtensionsRequest = z.object({
     sessionId: z.string()
 });
 
+export const zSessionExtensionStatus = z.enum([
+    'starting',
+    'running',
+    'failed',
+    'stopped'
+]);
+
+export const zSessionExtensionTool = z.object({
+    name: z.string(),
+    description: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zSessionExtensionInfo = z.object({
+    name: z.string(),
+    status: zSessionExtensionStatus,
+    tools: z.array(zSessionExtensionTool).optional().default([])
+});
+
 export const zGetSessionExtensionsResponse = z.object({
-    extensions: z.array(z.unknown())
+    extensions: z.array(zSessionExtensionInfo)
 });
 
 /**

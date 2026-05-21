@@ -83,3 +83,6 @@ result
 # Goose self-test artifacts
 gooseselftest/
 .tasks/
+
+# goose2web
+/ui/goose2web/dist
