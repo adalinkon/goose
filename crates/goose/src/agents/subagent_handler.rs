@@ -145,13 +145,23 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             .await
             .map_err(|e| anyhow!("Failed to set provider on sub agent: {}", e))?;
 
-        for extension in &task_config.extensions {
-            if let Err(e) = agent.add_extension(extension.clone(), &session_id).await {
-                debug!(
-                    "Failed to add extension '{}' to subagent: {}",
-                    extension.name(),
-                    e
-                );
+        match agent
+            .add_extensions_bulk(task_config.extensions.clone(), &session_id)
+            .await
+        {
+            Ok(results) => {
+                for result in &results {
+                    if !result.success {
+                        debug!(
+                            "Failed to add extension '{}' to subagent: {}",
+                            result.name,
+                            result.error.as_deref().unwrap_or("unknown error")
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                debug!("Failed to add extensions to subagent: {}", e);
             }
         }
 

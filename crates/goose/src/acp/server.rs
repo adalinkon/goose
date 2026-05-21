@@ -519,6 +519,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                     .collect(),
                 timeout,
                 socket: None,
+                backend: None,
                 bundled: Some(false),
                 available_tools: vec![],
             })
@@ -3697,6 +3698,7 @@ mod tests {
             )]),
             timeout: None,
             socket: None,
+            backend: None,
             bundled: Some(false),
             available_tools: vec![],
         })

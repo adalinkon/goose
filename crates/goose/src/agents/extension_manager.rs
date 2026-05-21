@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tempfile::{tempdir, TempDir};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
@@ -36,6 +36,10 @@ use crate::agents::extension::{Envs, ProcessExit};
 use crate::agents::extension_malware_check;
 use crate::agents::mcp_client::{
     GooseMcpClientCapabilities, GooseMcpHostInfo, McpClient, McpClientTrait,
+};
+use crate::agents::streamable_http_backend::{
+    acquire_backend, context_with_port, context_without_port, render_backend_template,
+    BackendMcpClient,
 };
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
@@ -666,6 +670,46 @@ async fn create_streamable_http_client(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn create_streamable_http_client_with_retry(
+    uri: &str,
+    timeout: Option<u64>,
+    headers: &HashMap<String, String>,
+    name: &str,
+    socket: Option<&str>,
+    provider: SharedProvider,
+    client_name: String,
+    capabilities: GooseMcpClientCapabilities,
+    roots_dir: &std::path::Path,
+    startup_timeout: Option<u64>,
+) -> ExtensionResult<Box<dyn McpClientTrait>> {
+    let deadline = Instant::now() + Duration::from_secs(resolve_timeout(startup_timeout));
+
+    loop {
+        match create_streamable_http_client(
+            uri,
+            timeout,
+            headers,
+            name,
+            socket,
+            provider.clone(),
+            client_name.clone(),
+            capabilities.clone(),
+            roots_dir,
+        )
+        .await
+        {
+            Ok(client) => return Ok(client),
+            Err(error) => {
+                if Instant::now() >= deadline {
+                    return Err(error);
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        }
+    }
+}
+
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
 async fn create_unix_socket_http_client(
@@ -838,28 +882,87 @@ impl ExtensionManager {
                 envs,
                 env_keys,
                 socket,
+                backend,
                 ..
             } => {
                 let config = Config::global();
                 let all_envs = merge_environments(envs, env_keys, &sanitized_name, config).await?;
-                let resolved_uri = substitute_env_vars(uri, &all_envs);
-                let resolved_headers = headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), substitute_env_vars(v, &all_envs)))
-                    .collect();
-                let resolved_socket = socket.as_ref().map(|s| substitute_env_vars(s, &all_envs));
-                create_streamable_http_client(
-                    &resolved_uri,
-                    *timeout,
-                    &resolved_headers,
-                    name,
-                    resolved_socket.as_deref(),
-                    self.provider.clone(),
-                    self.client_name.clone(),
-                    self.mcp_client_capabilities(),
-                    &effective_working_dir,
-                )
-                .await?
+                if let Some(backend) = backend {
+                    let backend_envs = merge_environments(
+                        &backend.envs,
+                        &backend.env_keys,
+                        &sanitized_name,
+                        config,
+                    )
+                    .await?;
+                    let base_context =
+                        context_without_port(name, session_id, &effective_working_dir);
+                    let lease = acquire_backend(
+                        backend,
+                        &backend_envs,
+                        &base_context,
+                        &effective_working_dir,
+                    )
+                    .await?;
+                    let context = context_with_port(base_context, lease.port());
+
+                    let resolved_uri =
+                        render_backend_template(&substitute_env_vars(uri, &all_envs), &context)?;
+                    let resolved_headers = headers
+                        .iter()
+                        .map(|(k, v)| {
+                            Ok((
+                                k.clone(),
+                                render_backend_template(
+                                    &substitute_env_vars(v, &all_envs),
+                                    &context,
+                                )?,
+                            ))
+                        })
+                        .collect::<ExtensionResult<HashMap<_, _>>>()?;
+                    let resolved_socket = socket
+                        .as_ref()
+                        .map(|s| {
+                            render_backend_template(&substitute_env_vars(s, &all_envs), &context)
+                        })
+                        .transpose()?;
+
+                    let client = create_streamable_http_client_with_retry(
+                        &resolved_uri,
+                        *timeout,
+                        &resolved_headers,
+                        name,
+                        resolved_socket.as_deref(),
+                        self.provider.clone(),
+                        self.client_name.clone(),
+                        self.mcp_client_capabilities(),
+                        &effective_working_dir,
+                        backend.timeout,
+                    )
+                    .await?;
+                    let client: Arc<dyn McpClientTrait> = Arc::from(client);
+                    Box::new(BackendMcpClient::new(client, lease))
+                } else {
+                    let resolved_uri = substitute_env_vars(uri, &all_envs);
+                    let resolved_headers = headers
+                        .iter()
+                        .map(|(k, v)| (k.clone(), substitute_env_vars(v, &all_envs)))
+                        .collect();
+                    let resolved_socket =
+                        socket.as_ref().map(|s| substitute_env_vars(s, &all_envs));
+                    create_streamable_http_client(
+                        &resolved_uri,
+                        *timeout,
+                        &resolved_headers,
+                        name,
+                        resolved_socket.as_deref(),
+                        self.provider.clone(),
+                        self.client_name.clone(),
+                        self.mcp_client_capabilities(),
+                        &effective_working_dir,
+                    )
+                    .await?
+                }
             }
             ExtensionConfig::Builtin { ref name, .. }
             | ExtensionConfig::Platform { ref name, .. } => {
