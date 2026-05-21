@@ -3433,6 +3433,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "780955b8b195a21ab8e4ac6b60dd1dbdcec1dc6c51c0617964b08c81785e12c9"
 
 [[package]]
+name = "doctor"
+version = "0.1.0"
+source = "git+https://github.com/block/builderbot?rev=8e1c3ec145edc0df5f04b4427cfd758378036862#8e1c3ec145edc0df5f04b4427cfd758378036862"
+dependencies = [
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4582,6 +4591,7 @@ dependencies = [
  "ctor",
  "dashmap 6.1.0",
  "dirs 5.0.1",
+ "doctor",
  "dotenvy",
  "encoding_rs",
  "env-lock",
@@ -4606,6 +4616,7 @@ dependencies = [
  "libc",
  "llama-cpp-2",
  "lru",
+ "mime_guess",
  "minijinja",
  "mockall",
  "nanoid",
@@ -4655,6 +4666,7 @@ dependencies = [
  "tokio-cron-scheduler",
  "tokio-stream",
  "tokio-util",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-appender",
