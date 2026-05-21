@@ -5,6 +5,7 @@ mod mcp_app_proxy;
 mod provider;
 pub mod server;
 pub mod server_factory;
+pub(crate) mod session_events;
 pub(crate) mod tools;
 pub mod transport;
 

@@ -92,6 +92,42 @@ impl AcpServerConnection {
     pub fn cx(&self) -> &ConnectionTo<Agent> {
         &self.cx
     }
+
+    #[allow(dead_code)]
+    pub async fn load_session_with_last_seq(
+        &mut self,
+        session_id: &str,
+        last_seq: u64,
+        mcp_servers: Vec<McpServer>,
+    ) -> anyhow::Result<SessionData<AcpServerSession>> {
+        self.updates.lock().unwrap().clear();
+        let work_dir = tempfile::tempdir().unwrap();
+        let session_id = agent_client_protocol::schema::SessionId::new(session_id.to_string());
+        let mut meta = serde_json::Map::new();
+        meta.insert("lastSeq".to_string(), serde_json::Value::from(last_seq));
+        let response = self
+            .cx
+            .send_request(
+                LoadSessionRequest::new(session_id.clone(), work_dir.path())
+                    .mcp_servers(mcp_servers)
+                    .meta(meta),
+            )
+            .block_task()
+            .await?;
+        let session = AcpServerSession {
+            cx: self.cx.clone(),
+            session_id,
+            updates: self.updates.clone(),
+            permission: self.permission.clone(),
+            notify: self.notify.clone(),
+            _work_dir: work_dir,
+        };
+        Ok(SessionData {
+            session,
+            models: response.models,
+            modes: response.modes,
+        })
+    }
 }
 
 #[async_trait]

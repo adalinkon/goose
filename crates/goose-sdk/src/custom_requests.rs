@@ -170,7 +170,31 @@ pub struct GetSessionExtensionsRequest {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct GetSessionExtensionsResponse {
-    pub extensions: Vec<serde_json::Value>,
+    pub extensions: Vec<SessionExtensionInfo>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SessionExtensionInfo {
+    pub name: String,
+    pub status: SessionExtensionStatus,
+    #[serde(default)]
+    pub tools: Vec<SessionExtensionTool>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionExtensionStatus {
+    Starting,
+    #[default]
+    Running,
+    Failed,
+    Stopped,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SessionExtensionTool {
+    pub name: String,
+    pub description: Option<String>,
 }
 
 /// Read allowlisted user preferences. Empty `keys` means all supported preferences.

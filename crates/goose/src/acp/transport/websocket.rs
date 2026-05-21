@@ -48,6 +48,15 @@ pub(crate) async fn handle_ws_upgrade(
     response
 }
 
+fn extract_session_id(text: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    value
+        .get("params")
+        .and_then(|params| params.get("sessionId"))
+        .and_then(|session_id| session_id.as_str())
+        .map(ToString::to_string)
+}
+
 async fn run_ws(
     socket: WebSocket,
     registry: Arc<ConnectionRegistry>,
@@ -76,6 +85,12 @@ async fn run_ws(
                 match msg_result {
                     Some(Ok(Message::Text(text))) => {
                         let text_str = text.to_string();
+                        if let Some(session_id) = extract_session_id(&text_str) {
+                            connection
+                                .agent
+                                .attach_client(&session_id, connection_id.clone())
+                                .await;
+                        }
                         trace!(connection_id = %connection_id, payload = %text_str, "Client → Agent: {} bytes", text_str.len());
                         if connection.to_agent_tx.send(text_str).await.is_err() {
                             error!(connection_id = %connection_id, "Agent channel closed");
@@ -120,6 +135,7 @@ async fn run_ws(
 
     debug!(connection_id = %connection_id, "Cleaning up WebSocket connection");
     if let Some(conn) = registry.remove(&connection_id).await {
+        conn.agent.detach_client(&connection_id).await;
         conn.shutdown().await;
     }
 }

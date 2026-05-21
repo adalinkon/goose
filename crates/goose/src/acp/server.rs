@@ -1,5 +1,6 @@
 use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
+use crate::acp::session_events::{runtime_event_meta, session_runtime_state_meta, SessionEventBus};
 use crate::acp::tools::AcpAwareToolMeta;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
@@ -66,7 +67,7 @@ use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use strum::{EnumMessage, VariantNames};
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::{broadcast, Mutex, OnceCell};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -162,6 +163,10 @@ async fn ensure_refresh_identity_current(
 /// below is keyed by session ID.
 struct GooseAcpSession {
     agent: AgentHandle,
+    event_bus: Arc<SessionEventBus>,
+    active_request: Option<ActiveRequest>,
+    attached_clients: HashSet<String>,
+    last_activity_at: std::time::Instant,
     tool_requests: HashMap<String, crate::conversation::message::ToolRequest>,
     /// For each tool_call_id that belongs to a multi-tool chain (run of
     /// consecutive ToolRequest blocks within one assistant message), the chain
@@ -179,6 +184,11 @@ struct GooseAcpSession {
     /// Working directory set while the agent was still loading.
     /// Applied once the agent becomes ready.
     pending_working_dir: Option<std::path::PathBuf>,
+}
+
+struct ActiveRequest {
+    request_id: String,
+    cancel_token: CancellationToken,
 }
 
 /// A run of consecutive ToolRequest blocks within one assistant message,
@@ -1192,6 +1202,130 @@ fn validate_absolute_cwd(cwd: &Path) -> Result<(), agent_client_protocol::Error>
     Ok(())
 }
 
+fn replay_session_messages_to_client(
+    cx: &ConnectionTo<Client>,
+    session_id: &SessionId,
+    messages: &[Message],
+) -> Result<HashMap<String, ToolRequest>, agent_client_protocol::Error> {
+    let mut replay_tool_requests = HashMap::<String, ToolRequest>::new();
+
+    for message in messages {
+        if !message.metadata.user_visible {
+            continue;
+        }
+
+        for content_item in &message.content {
+            match content_item {
+                MessageContent::Text(text) => {
+                    let mut tc = TextContent::new(text.text.clone());
+                    if let Some(audience) = text.audience() {
+                        tc = tc.annotations(
+                            Annotations::new().audience(
+                                audience
+                                    .iter()
+                                    .map(|r| match r {
+                                        Role::Assistant => {
+                                            agent_client_protocol::schema::Role::Assistant
+                                        }
+                                        Role::User => agent_client_protocol::schema::Role::User,
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ),
+                        );
+                    }
+                    let chunk = ContentChunk::new(ContentBlock::Text(tc))
+                        .meta(replay_message_meta(message));
+                    let update = match message.role {
+                        Role::User => SessionUpdate::UserMessageChunk(chunk),
+                        Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
+                    };
+                    cx.send_notification(SessionNotification::new(session_id.clone(), update))?;
+                }
+                MessageContent::ToolRequest(tool_request) => {
+                    replay_tool_requests.insert(tool_request.id.clone(), tool_request.clone());
+
+                    let pending_tool_call = pending_tool_call_from_request(tool_request);
+                    let mut meta = pending_tool_call.identity_meta;
+                    if let Some(chain_summary) = tool_request.persisted_chain_summary() {
+                        meta = with_tool_chain_summary_meta(
+                            meta,
+                            &chain_summary.summary,
+                            chain_summary.count,
+                        );
+                    }
+                    let tool_call = pending_tool_call
+                        .tool_call
+                        .meta(merge_replay_message_meta(meta, message));
+
+                    cx.send_notification(SessionNotification::new(
+                        session_id.clone(),
+                        SessionUpdate::ToolCall(tool_call),
+                    ))?;
+                }
+                MessageContent::ToolResponse(tool_response) => {
+                    let status = match &tool_response.tool_result {
+                        Ok(result) if result.is_error == Some(true) => ToolCallStatus::Failed,
+                        Ok(_) => ToolCallStatus::Completed,
+                        Err(_) => ToolCallStatus::Failed,
+                    };
+
+                    let mut fields = ToolCallUpdateFields::new().status(status);
+                    if let Some(raw_output) = extract_tool_raw_output(&tool_response.tool_result) {
+                        fields = fields.raw_output(raw_output);
+                    }
+                    if !tool_response
+                        .tool_result
+                        .as_ref()
+                        .is_ok_and(|r| r.is_acp_aware())
+                    {
+                        let content = build_tool_call_content(&tool_response.tool_result);
+                        fields = fields.content(content);
+
+                        let locations =
+                            extract_locations_from_meta(tool_response).unwrap_or_else(|| {
+                                if let Some(tool_request) =
+                                    replay_tool_requests.get(&tool_response.id)
+                                {
+                                    extract_tool_locations(tool_request, tool_response)
+                                } else {
+                                    Vec::new()
+                                }
+                            });
+                        if !locations.is_empty() {
+                            fields = fields.locations(locations);
+                        }
+                    }
+
+                    let update =
+                        ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
+                            .meta(merge_replay_message_meta(
+                                extract_tool_call_update_meta(tool_response),
+                                message,
+                            ));
+                    cx.send_notification(SessionNotification::new(
+                        session_id.clone(),
+                        SessionUpdate::ToolCallUpdate(update),
+                    ))?;
+                }
+                MessageContent::Thinking(thinking) => {
+                    cx.send_notification(SessionNotification::new(
+                        session_id.clone(),
+                        SessionUpdate::AgentThoughtChunk(
+                            ContentChunk::new(ContentBlock::Text(TextContent::new(
+                                thinking.thinking.clone(),
+                            )))
+                            .meta(replay_message_meta(message)),
+                        ),
+                    ))?;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(replay_tool_requests)
+}
+
 impl GooseAcpAgent {
     fn available_commands_update(working_dir: &std::path::Path) -> AvailableCommandsUpdate {
         let commands = crate::slash_commands::slash_command::list_acp_commands(Some(working_dir))
@@ -1708,6 +1842,56 @@ impl GooseAcpAgent {
         self.sessions.lock().await.contains_key(session_id)
     }
 
+    pub async fn attach_client(&self, session_id: &str, client_id: String) {
+        let mut sessions = self.sessions.lock().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.attached_clients.insert(client_id);
+            session.last_activity_at = std::time::Instant::now();
+        }
+    }
+
+    pub async fn detach_client(&self, client_id: &str) {
+        let mut sessions = self.sessions.lock().await;
+        for session in sessions.values_mut() {
+            session.attached_clients.remove(client_id);
+            session.last_activity_at = std::time::Instant::now();
+        }
+    }
+
+    async fn subscribe_session_events(&self, cx: &ConnectionTo<Client>, session_id: &SessionId) {
+        let event_bus = {
+            let sessions = self.sessions.lock().await;
+            sessions
+                .get(session_id.0.as_ref())
+                .map(|session| session.event_bus.clone())
+        };
+        let Some(event_bus) = event_bus else {
+            return;
+        };
+
+        let session_id = session_id.clone();
+        let cx = cx.clone();
+        let mut rx = event_bus.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        let notification =
+                            SessionNotification::new(session_id.clone(), event.update.clone())
+                                .meta(runtime_event_meta(&event));
+                        if cx.send_notification(notification).is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!(session_id = %session_id.0, skipped = n, "session runtime event subscriber lagged");
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+    }
+
     /// Convert ACP prompt content blocks into a user message.
     fn convert_acp_prompt_to_message(prompt: &[ContentBlock]) -> Message {
         let mut message = Message::user();
@@ -1789,12 +1973,20 @@ impl GooseAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         match content_item {
             MessageContent::Text(text) => {
-                cx.send_notification(SessionNotification::new(
-                    session_id.clone(),
-                    SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
-                        TextContent::new(text.text.clone()),
-                    ))),
-                ))?;
+                let request_id = session
+                    .active_request
+                    .as_ref()
+                    .map(|request| request.request_id.clone());
+                session
+                    .event_bus
+                    .publish_chat_update(
+                        session_id.0.as_ref(),
+                        request_id,
+                        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                            TextContent::new(text.text.clone()),
+                        ))),
+                    )
+                    .await;
             }
             MessageContent::ToolRequest(tool_request) => {
                 self.handle_tool_request(
@@ -1819,12 +2011,20 @@ impl GooseAcpAgent {
                 .await?;
             }
             MessageContent::Thinking(thinking) => {
-                cx.send_notification(SessionNotification::new(
-                    session_id.clone(),
-                    SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
-                        TextContent::new(thinking.thinking.clone()),
-                    ))),
-                ))?;
+                let request_id = session
+                    .active_request
+                    .as_ref()
+                    .map(|request| request.request_id.clone());
+                session
+                    .event_bus
+                    .publish_chat_update(
+                        session_id.0.as_ref(),
+                        request_id,
+                        SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
+                            TextContent::new(thinking.thinking.clone()),
+                        ))),
+                    )
+                    .await;
             }
             MessageContent::ActionRequired(action_required) => {
                 if let ActionRequiredData::ToolConfirmation {
@@ -1857,7 +2057,7 @@ impl GooseAcpAgent {
         session_id_for_persist: &str,
         message_id: Option<&str>,
         session: &mut GooseAcpSession,
-        cx: &ConnectionTo<Client>,
+        _cx: &ConnectionTo<Client>,
     ) -> Result<(), agent_client_protocol::Error> {
         session
             .tool_requests
@@ -1867,10 +2067,18 @@ impl GooseAcpAgent {
         let initial_tool_call = pending_tool_call
             .tool_call
             .meta(pending_tool_call.identity_meta.clone());
-        cx.send_notification(SessionNotification::new(
-            session_id.clone(),
-            SessionUpdate::ToolCall(initial_tool_call),
-        ))?;
+        let request_id = session
+            .active_request
+            .as_ref()
+            .map(|request| request.request_id.clone());
+        session
+            .event_bus
+            .publish_chat_update(
+                session_id.0.as_ref(),
+                request_id,
+                SessionUpdate::ToolCall(initial_tool_call),
+            )
+            .await;
 
         if Config::global()
             .get_goose_disable_tool_call_summary()
@@ -1886,7 +2094,11 @@ impl GooseAcpAgent {
             };
             let sid = session_id.clone();
             let request_id = tool_request.id.clone();
-            let cx = cx.clone();
+            let event_bus = session.event_bus.clone();
+            let active_request_id = session
+                .active_request
+                .as_ref()
+                .map(|request| request.request_id.clone());
             let name = tool_call.name.to_string();
             let identity_meta = pending_tool_call.identity_meta.clone();
             let fallback_title = pending_tool_call.fallback_title.clone();
@@ -1980,14 +2192,16 @@ impl GooseAcpAgent {
                     }
                 };
 
-                let fields = ToolCallUpdateFields::new().title(title.clone());
-                let _ = cx.send_notification(SessionNotification::new(
-                    sid,
-                    SessionUpdate::ToolCallUpdate(
-                        ToolCallUpdate::new(ToolCallId::new(request_id.clone()), fields)
-                            .meta(identity_meta),
-                    ),
-                ));
+                let update = SessionUpdate::ToolCallUpdate(
+                    ToolCallUpdate::new(
+                        ToolCallId::new(request_id.clone()),
+                        ToolCallUpdateFields::new().title(title.clone()),
+                    )
+                    .meta(identity_meta),
+                );
+                event_bus
+                    .publish_tool_call_update(sid.0.as_ref(), active_request_id, update)
+                    .await;
 
                 // Best-effort persistence: only persist the LLM-generated title
                 // (not the deterministic fallback) so reload uses fallback_title
@@ -2029,7 +2243,7 @@ impl GooseAcpAgent {
         session_id_str: &str,
         message_id: Option<&str>,
         session: &mut GooseAcpSession,
-        cx: &ConnectionTo<Client>,
+        _cx: &ConnectionTo<Client>,
     ) -> Result<(), agent_client_protocol::Error> {
         let status = match &tool_response.tool_result {
             Ok(result) if result.is_error == Some(true) => ToolCallStatus::Failed,
@@ -2063,15 +2277,23 @@ impl GooseAcpAgent {
 
         let update = ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
             .meta(extract_tool_call_update_meta(tool_response));
-        cx.send_notification(SessionNotification::new(
-            session_id.clone(),
-            SessionUpdate::ToolCallUpdate(update),
-        ))?;
+        let request_id = session
+            .active_request
+            .as_ref()
+            .map(|request| request.request_id.clone());
+        session
+            .event_bus
+            .publish_chat_update(
+                session_id.0.as_ref(),
+                request_id,
+                SessionUpdate::ToolCallUpdate(update),
+            )
+            .await;
 
         // Chain summarization: when this response completes a multi-tool
         // chain, fire one LLM summary covering the run.
         session.responded_tool_ids.insert(tool_response.id.clone());
-        self.maybe_summarize_chain(&tool_response.id, session_id, session_id_str, session, cx);
+        self.maybe_summarize_chain(&tool_response.id, session_id, session_id_str, session);
         let _ = message_id;
 
         Ok(())
@@ -2088,7 +2310,6 @@ impl GooseAcpAgent {
         session_id: &SessionId,
         _session_id_str: &str,
         session: &mut GooseAcpSession,
-        cx: &ConnectionTo<Client>,
     ) {
         let Some(chain) = session.chain_membership.get(tool_call_id).cloned() else {
             warn!(
@@ -2170,7 +2391,11 @@ impl GooseAcpAgent {
 
         let sid = session_id.clone();
         let chain_for_task = chain.clone();
-        let cx = cx.clone();
+        let event_bus = session.event_bus.clone();
+        let active_request_id = session
+            .active_request
+            .as_ref()
+            .map(|request| request.request_id.clone());
         let session_manager = self.session_manager.clone();
 
         let first_id = first_id.clone();
@@ -2271,12 +2496,15 @@ impl GooseAcpAgent {
 
             let meta = with_tool_chain_summary_meta(identity_meta, &summary, count);
             let fields = ToolCallUpdateFields::new();
-            let _ = cx.send_notification(SessionNotification::new(
-                sid,
-                SessionUpdate::ToolCallUpdate(
-                    ToolCallUpdate::new(ToolCallId::new(first_id), fields).meta(meta),
-                ),
-            ));
+            event_bus
+                .publish_tool_call_update(
+                    sid.0.as_ref(),
+                    active_request_id,
+                    SessionUpdate::ToolCallUpdate(
+                        ToolCallUpdate::new(ToolCallId::new(first_id), fields).meta(meta),
+                    ),
+                )
+                .await;
         });
     }
 
@@ -2594,6 +2822,10 @@ impl GooseAcpAgent {
 
         let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
+            event_bus: Arc::new(SessionEventBus::new(session_id_str.clone())),
+            active_request: None,
+            attached_clients: HashSet::new(),
+            last_activity_at: std::time::Instant::now(),
             tool_requests: HashMap::new(),
             chain_membership: HashMap::new(),
             responded_tool_ids: HashSet::new(),
@@ -2605,6 +2837,8 @@ impl GooseAcpAgent {
             .lock()
             .await
             .insert(session_id_str.clone(), acp_session);
+        self.subscribe_session_events(cx, &SessionId::new(session_id_str.clone()))
+            .await;
 
         let mode_state = build_mode_state(self.goose_mode)?;
 
@@ -2784,6 +3018,11 @@ impl GooseAcpAgent {
         let session_id = args.session_id.0.to_string();
         let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
+        let last_seq = args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("lastSeq"))
+            .and_then(|v| v.as_u64());
 
         let t0 = std::time::Instant::now();
         let goose_session = self
@@ -2797,9 +3036,6 @@ impl GooseAcpAgent {
         debug!(target: "perf", sid = %sid, ms = t0.elapsed().as_millis() as u64, "perf: load_session get_session");
         let loaded_mode = goose_session.goose_mode;
 
-        // ── REPLAY MESSAGES ──
-        // Stream user-visible messages back to the client so the chat view
-        // populates immediately, before the slow agent/provider/extension setup.
         let messages = goose_session
             .conversation
             .as_ref()
@@ -2812,137 +3048,34 @@ impl GooseAcpAgent {
             "perf: load_session messages loaded"
         );
 
-        let mut replay_tool_requests =
-            HashMap::<String, crate::conversation::message::ToolRequest>::new();
+        if let Some((event_bus, mode)) = self
+            .attach_existing_session_runtime(cx, &args.session_id, last_seq)
+            .await?
+        {
+            replay_session_messages_to_client(cx, &args.session_id, &messages)?;
+            let mode_state = build_mode_state(mode)?;
+            let mut response = LoadSessionResponse::new().modes(mode_state);
+            let snapshot = event_bus.snapshot().await;
+            let mut meta = serde_json::Map::new();
+            meta.insert(
+                "runtime".to_string(),
+                serde_json::to_value(&snapshot).unwrap_or(serde_json::Value::Null),
+            );
+            response = response.meta(meta);
 
-        for message in &messages {
-            if !message.metadata.user_visible {
-                continue;
-            }
+            Self::send_available_commands_update(cx, &args.session_id, &goose_session.working_dir)?;
 
-            for content_item in &message.content {
-                match content_item {
-                    MessageContent::Text(text) => {
-                        let mut tc = TextContent::new(text.text.clone());
-                        if let Some(audience) = text.audience() {
-                            tc = tc.annotations(
-                                Annotations::new().audience(
-                                    audience
-                                        .iter()
-                                        .map(|r| match r {
-                                            Role::Assistant => {
-                                                agent_client_protocol::schema::Role::Assistant
-                                            }
-                                            Role::User => agent_client_protocol::schema::Role::User,
-                                        })
-                                        .collect::<Vec<_>>(),
-                                ),
-                            );
-                        }
-                        let chunk = ContentChunk::new(ContentBlock::Text(tc))
-                            .meta(replay_message_meta(message));
-                        let update = match message.role {
-                            Role::User => SessionUpdate::UserMessageChunk(chunk),
-                            Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
-                        };
-                        cx.send_notification(SessionNotification::new(
-                            args.session_id.clone(),
-                            update,
-                        ))?;
-                    }
-                    MessageContent::ToolRequest(tool_request) => {
-                        // Replay-only: emit the ToolCall notification and
-                        // stash the request for location extraction, but
-                        // don't require a full GooseAcpSession.
-                        replay_tool_requests.insert(tool_request.id.clone(), tool_request.clone());
-
-                        let pending_tool_call = pending_tool_call_from_request(tool_request);
-                        let mut meta = pending_tool_call.identity_meta;
-                        // If this tool request is the first of a chain whose
-                        // summary was persisted at completion time, attach the
-                        // chain summary to the initial ToolCall so the chain
-                        // header is correct on first paint after reload.
-                        if let Some(chain_summary) = tool_request.persisted_chain_summary() {
-                            meta = with_tool_chain_summary_meta(
-                                meta,
-                                &chain_summary.summary,
-                                chain_summary.count,
-                            );
-                        }
-                        let tool_call = pending_tool_call
-                            .tool_call
-                            .meta(merge_replay_message_meta(meta, message));
-
-                        cx.send_notification(SessionNotification::new(
-                            args.session_id.clone(),
-                            SessionUpdate::ToolCall(tool_call),
-                        ))?;
-                    }
-                    MessageContent::ToolResponse(tool_response) => {
-                        // Replay-only: emit the ToolCallUpdate notification,
-                        // using the stashed replay_tool_requests for location
-                        // extraction.
-                        let status = match &tool_response.tool_result {
-                            Ok(result) if result.is_error == Some(true) => ToolCallStatus::Failed,
-                            Ok(_) => ToolCallStatus::Completed,
-                            Err(_) => ToolCallStatus::Failed,
-                        };
-
-                        let mut fields = ToolCallUpdateFields::new().status(status);
-                        if let Some(raw_output) =
-                            extract_tool_raw_output(&tool_response.tool_result)
-                        {
-                            fields = fields.raw_output(raw_output);
-                        }
-                        if !tool_response
-                            .tool_result
-                            .as_ref()
-                            .is_ok_and(|r| r.is_acp_aware())
-                        {
-                            let content = build_tool_call_content(&tool_response.tool_result);
-                            fields = fields.content(content);
-
-                            let locations = extract_locations_from_meta(tool_response)
-                                .unwrap_or_else(|| {
-                                    if let Some(tool_request) =
-                                        replay_tool_requests.get(&tool_response.id)
-                                    {
-                                        extract_tool_locations(tool_request, tool_response)
-                                    } else {
-                                        Vec::new()
-                                    }
-                                });
-                            if !locations.is_empty() {
-                                fields = fields.locations(locations);
-                            }
-                        }
-
-                        let update =
-                            ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
-                                .meta(merge_replay_message_meta(
-                                    extract_tool_call_update_meta(tool_response),
-                                    message,
-                                ));
-                        cx.send_notification(SessionNotification::new(
-                            args.session_id.clone(),
-                            SessionUpdate::ToolCallUpdate(update),
-                        ))?;
-                    }
-                    MessageContent::Thinking(thinking) => {
-                        cx.send_notification(SessionNotification::new(
-                            args.session_id.clone(),
-                            SessionUpdate::AgentThoughtChunk(
-                                ContentChunk::new(ContentBlock::Text(TextContent::new(
-                                    thinking.thinking.clone(),
-                                )))
-                                .meta(replay_message_meta(message)),
-                            ),
-                        ))?;
-                    }
-                    _ => {}
-                }
-            }
+            debug!(
+                target: "perf",
+                sid = %sid,
+                ms = t_start.elapsed().as_millis() as u64,
+                "perf: load_session attached existing runtime"
+            );
+            return Ok(response);
         }
+
+        let replay_tool_requests =
+            replay_session_messages_to_client(cx, &args.session_id, &messages)?;
 
         // Update working directory.
         self.session_manager
@@ -2962,6 +3095,10 @@ impl GooseAcpAgent {
 
         let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
+            event_bus: Arc::new(SessionEventBus::new(session_id.clone())),
+            active_request: None,
+            attached_clients: HashSet::new(),
+            last_activity_at: std::time::Instant::now(),
             tool_requests: replay_tool_requests,
             chain_membership: HashMap::new(),
             responded_tool_ids: HashSet::new(),
@@ -2973,6 +3110,7 @@ impl GooseAcpAgent {
             .lock()
             .await
             .insert(session_id.clone(), acp_session);
+        self.subscribe_session_events(cx, &args.session_id).await;
 
         let mode_state = build_mode_state(loaded_mode)?;
 
@@ -3026,6 +3164,54 @@ impl GooseAcpAgent {
         Ok(response)
     }
 
+    async fn attach_existing_session_runtime(
+        &self,
+        cx: &ConnectionTo<Client>,
+        session_id: &SessionId,
+        last_seq: Option<u64>,
+    ) -> Result<Option<(Arc<SessionEventBus>, GooseMode)>, agent_client_protocol::Error> {
+        let session_id_str = session_id.0.to_string();
+        let (event_bus, mode) = {
+            let mut sessions = self.sessions.lock().await;
+            let Some(session) = sessions.get_mut(&session_id_str) else {
+                return Ok(None);
+            };
+            session.last_activity_at = std::time::Instant::now();
+            (session.event_bus.clone(), self.goose_mode)
+        };
+
+        let snapshot = event_bus.snapshot().await;
+        self.subscribe_session_events(cx, session_id).await;
+        cx.send_notification(SessionNotification::new(
+            session_id.clone(),
+            SessionUpdate::SessionInfoUpdate(
+                SessionInfoUpdate::new().meta(session_runtime_state_meta(&snapshot)),
+            ),
+        ))?;
+
+        let (replay_events, replay_too_old) = event_bus.replay_since(last_seq).await;
+        for event in replay_events {
+            cx.send_notification(
+                SessionNotification::new(session_id.clone(), event.update.clone())
+                    .meta(runtime_event_meta(&event)),
+            )?;
+        }
+        if replay_too_old {
+            let mut meta = serde_json::Map::new();
+            meta.insert("replayTooOld".to_string(), serde_json::Value::Bool(true));
+            meta.insert(
+                "runtime".to_string(),
+                serde_json::to_value(&snapshot).unwrap_or(serde_json::Value::Null),
+            );
+            cx.send_notification(SessionNotification::new(
+                session_id.clone(),
+                SessionUpdate::SessionInfoUpdate(SessionInfoUpdate::new().meta(meta)),
+            ))?;
+        }
+
+        Ok(Some((event_bus, mode)))
+    }
+
     async fn on_prompt(
         &self,
         cx: &ConnectionTo<Client>,
@@ -3040,6 +3226,30 @@ impl GooseAcpAgent {
         let agent = self
             .get_session_agent(&session_id, Some(cancel_token.clone()))
             .await?;
+
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let event_bus = {
+            let mut sessions = self.sessions.lock().await;
+            let session = sessions.get_mut(&session_id).ok_or_else(|| {
+                agent_client_protocol::Error::invalid_params()
+                    .data(format!("Session not found: {}", session_id))
+            })?;
+            if let Some(active_request) = &session.active_request {
+                return Err(agent_client_protocol::Error::invalid_params().data(format!(
+                    "Session {} is busy with request {}",
+                    session_id, active_request.request_id
+                )));
+            }
+            session.active_request = Some(ActiveRequest {
+                request_id: request_id.clone(),
+                cancel_token: cancel_token.clone(),
+            });
+            session.last_activity_at = std::time::Instant::now();
+            session.event_bus.clone()
+        };
+        event_bus
+            .set_active_request(&session_id, Some(request_id.clone()))
+            .await;
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
 
@@ -3179,8 +3389,11 @@ impl GooseAcpAgent {
                 // covers this.)
                 extend_chain_membership(&chain_buffer, &mut session.chain_membership);
                 session.cancel_token = None;
+                session.active_request = None;
+                session.last_activity_at = std::time::Instant::now();
             }
         }
+        event_bus.set_active_request(&session_id, None).await;
 
         let session = self
             .session_manager
@@ -3229,7 +3442,10 @@ impl GooseAcpAgent {
         let mut sessions = self.sessions.lock().await;
 
         if let Some(session) = sessions.get_mut(&session_id) {
-            if let Some(ref token) = session.cancel_token {
+            if let Some(active_request) = &session.active_request {
+                info!(session_id = %session_id, "prompt cancelled");
+                active_request.cancel_token.cancel();
+            } else if let Some(ref token) = session.cancel_token {
                 info!(session_id = %session_id, "prompt cancelled");
                 token.cancel();
             }
@@ -3532,6 +3748,10 @@ impl GooseAcpAgent {
 
         let acp_session = GooseAcpSession {
             agent: AgentHandle::Loading(agent_rx),
+            event_bus: Arc::new(SessionEventBus::new(new_session_id.clone())),
+            active_request: None,
+            attached_clients: HashSet::new(),
+            last_activity_at: std::time::Instant::now(),
             tool_requests: HashMap::new(),
             chain_membership: HashMap::new(),
             responded_tool_ids: HashSet::new(),
@@ -3543,6 +3763,8 @@ impl GooseAcpAgent {
             .lock()
             .await
             .insert(new_session_id.clone(), acp_session);
+        self.subscribe_session_events(cx, &SessionId::new(new_session_id.clone()))
+            .await;
 
         let mode_state = build_mode_state(self.goose_mode)?;
         let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;

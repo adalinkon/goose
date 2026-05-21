@@ -4,7 +4,10 @@ mod common_tests;
 use agent_client_protocol::schema::{ListSessionsRequest, ListSessionsResponse};
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::AcpServerConnection;
-use common_tests::fixtures::{run_test, Connection, OpenAiFixture, TestConnectionConfig};
+use common_tests::fixtures::{
+    assert_notifications, run_test, Connection, Notification, OpenAiFixture, PermissionDecision,
+    Session, TestConnectionConfig,
+};
 use common_tests::{
     run_close_session, run_config_mcp, run_config_option_mode_set, run_config_option_model_set,
     run_delete_session, run_fs_read_text_file_true, run_fs_write_text_file_false,
@@ -216,6 +219,55 @@ fn test_load_session_error_session_not_found() {
 #[test]
 fn test_load_session_mcp() {
     run_test(async { run_load_session_mcp::<AcpServerConnection>().await });
+}
+
+#[test]
+fn test_load_session_replays_persisted_history_when_runtime_exists() {
+    run_test(async {
+        let expected_session_id = AcpServerConnection::expected_session_id();
+        let openai = OpenAiFixture::new(
+            vec![(
+                r#"</info-msg>\nremember this persisted turn""#.into(),
+                include_str!("acp_test_data/openai_basic.txt"),
+            )],
+            expected_session_id.clone(),
+        )
+        .await;
+
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let common_tests::fixtures::SessionData { mut session, .. } =
+            conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
+        let session_id = session.session_id().0.to_string();
+
+        let output = session
+            .prompt("remember this persisted turn", PermissionDecision::Cancel)
+            .await
+            .unwrap();
+        assert_eq!(output.text, "2");
+
+        let common_tests::fixtures::SessionData {
+            session: loaded, ..
+        } = conn
+            .load_session_with_last_seq(&session_id, u64::MAX, vec![])
+            .await
+            .unwrap();
+
+        assert_notifications(
+            &loaded.notifications(),
+            &[
+                Notification::SessionInfoUpdate {
+                    title: None,
+                    updated_at: None,
+                    message_count: None,
+                    user_set_name: None,
+                },
+                Notification::UserMessage,
+                Notification::AgentMessage,
+                Notification::AvailableCommands,
+            ],
+        );
+    });
 }
 
 #[test]

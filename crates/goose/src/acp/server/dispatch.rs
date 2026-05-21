@@ -67,17 +67,16 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                     |req: PromptRequest, responder: Responder<PromptResponse>| async {
                         let agent = agent.clone();
                         let cx_clone = cx.clone();
-                        cx.spawn(async move {
+                        tokio::spawn(async move {
                             match agent.on_prompt(&cx_clone, req).await {
                                 Ok(response) => {
-                                    responder.respond(response)?;
+                                    let _ = responder.respond(response);
                                 }
                                 Err(e) => {
-                                    responder.respond_with_error(e)?;
+                                    let _ = responder.respond_with_error(e);
                                 }
                             }
-                            Ok(())
-                        })?;
+                        });
                         Ok(())
                     },
                 )

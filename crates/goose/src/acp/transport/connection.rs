@@ -14,6 +14,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{error, info, trace, warn};
 
 use crate::acp::adapters::{ReceiverToAsyncRead, SenderToAsyncWrite};
+use crate::acp::server::GooseAcpAgent;
 use crate::acp::server_factory::AcpServer;
 
 const OUTBOUND_BROADCAST_CAPACITY: usize = 1024;
@@ -72,6 +73,7 @@ impl OutboundStream {
 
 pub(crate) struct Connection {
     pub to_agent_tx: mpsc::Sender<String>,
+    pub agent: Arc<GooseAcpAgent>,
     /// Consumed once by `handle_initialize` to read the synchronous initialize
     /// response before the router task takes over.
     pub init_receiver: Mutex<Option<mpsc::UnboundedReceiver<String>>>,
@@ -107,8 +109,11 @@ impl ConnectionRegistry {
 
         let read_stream = ReceiverToAsyncRead::new(to_agent_rx);
         let write_stream = SenderToAsyncWrite::new(from_agent_tx);
-        let fut =
-            crate::acp::server::serve(agent, read_stream.compat(), write_stream.compat_write());
+        let fut = crate::acp::server::serve(
+            agent.clone(),
+            read_stream.compat(),
+            write_stream.compat_write(),
+        );
 
         let conn_id_for_task = connection_id.clone();
         let agent_handle = tokio::spawn(async move {
@@ -119,6 +124,7 @@ impl ConnectionRegistry {
 
         let connection = Arc::new(Connection {
             to_agent_tx,
+            agent,
             init_receiver: Mutex::new(Some(from_agent_rx)),
             init_complete: Mutex::new(false),
             agent_handle,
