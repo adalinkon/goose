@@ -280,10 +280,32 @@ fn extract_session_id_from_params(v: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::acp::server::{AcpProviderFactory, GooseAcpAgentOptions};
+    use crate::agents::GoosePlatform;
+    use crate::config::GooseMode;
     use std::time::Duration;
     use tokio::time::timeout;
 
-    fn fake_connection() -> (Arc<Connection>, mpsc::UnboundedSender<String>) {
+    async fn fake_agent() -> Arc<GooseAcpAgent> {
+        let provider_factory: AcpProviderFactory =
+            Arc::new(|_, _, _, _| Box::pin(async { anyhow::bail!("provider not used") }));
+        Arc::new(
+            GooseAcpAgent::new(GooseAcpAgentOptions {
+                provider_factory,
+                builtins: Vec::new(),
+                data_dir: tempfile::tempdir().unwrap().keep(),
+                config_dir: tempfile::tempdir().unwrap().keep(),
+                goose_mode: GooseMode::Auto,
+                disable_session_naming: true,
+                goose_platform: GoosePlatform::GooseCli,
+                additional_source_roots: Vec::new(),
+            })
+            .await
+            .unwrap(),
+        )
+    }
+
+    async fn fake_connection() -> (Arc<Connection>, mpsc::UnboundedSender<String>) {
         let (to_agent_tx, _to_agent_rx) = mpsc::channel::<String>(256);
         let (from_agent_tx, from_agent_rx) = mpsc::unbounded_channel::<String>();
 
@@ -293,6 +315,7 @@ mod tests {
 
         let connection = Arc::new(Connection {
             to_agent_tx,
+            agent: fake_agent().await,
             init_receiver: Mutex::new(Some(from_agent_rx)),
             init_complete: Mutex::new(false),
             agent_handle,
@@ -308,7 +331,7 @@ mod tests {
 
     #[tokio::test]
     async fn buffers_connection_scoped_messages_before_first_subscribe() {
-        let (conn, agent_tx) = fake_connection();
+        let (conn, agent_tx) = fake_connection().await;
         conn.start_router().await;
 
         agent_tx
@@ -326,7 +349,7 @@ mod tests {
 
     #[tokio::test]
     async fn routes_session_scoped_notification_to_session_stream() {
-        let (conn, agent_tx) = fake_connection();
+        let (conn, agent_tx) = fake_connection().await;
         conn.start_router().await;
 
         conn.ensure_session("sess_abc").await;
@@ -356,7 +379,7 @@ mod tests {
 
     #[tokio::test]
     async fn routes_response_using_pending_route_table() {
-        let (conn, agent_tx) = fake_connection();
+        let (conn, agent_tx) = fake_connection().await;
         conn.start_router().await;
 
         conn.ensure_session("sess_xyz").await;
@@ -382,7 +405,7 @@ mod tests {
 
     #[tokio::test]
     async fn websocket_all_outbound_sees_everything() {
-        let (conn, agent_tx) = fake_connection();
+        let (conn, agent_tx) = fake_connection().await;
         conn.start_router().await;
 
         agent_tx
@@ -404,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_session_subscribe_returns_none() {
-        let (conn, _agent_tx) = fake_connection();
+        let (conn, _agent_tx) = fake_connection().await;
         conn.start_router().await;
 
         assert!(conn.subscribe_session_stream("nope").await.is_none());
@@ -414,7 +437,7 @@ mod tests {
 
     #[tokio::test]
     async fn pre_subscribe_buffer_is_bounded() {
-        let (conn, agent_tx) = fake_connection();
+        let (conn, agent_tx) = fake_connection().await;
         conn.start_router().await;
 
         for i in 0..(PRE_SUBSCRIBE_BUFFER_CAPACITY + 50) {

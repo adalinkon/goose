@@ -256,12 +256,23 @@ fn test_load_session_replays_persisted_history_when_runtime_exists() {
         assert_notifications(
             &loaded.notifications(),
             &[
-                Notification::SessionInfoUpdate {
-                    title: None,
-                    updated_at: None,
-                    message_count: None,
-                    user_set_name: None,
-                },
+                Notification::UserMessage,
+                Notification::AgentMessage,
+                Notification::AvailableCommands,
+            ],
+        );
+
+        let common_tests::fixtures::SessionData {
+            session: fresh_loaded,
+            ..
+        } = conn
+            .load_session_with_last_seq(&session_id, 0, vec![])
+            .await
+            .unwrap();
+
+        assert_notifications(
+            &fresh_loaded.notifications(),
+            &[
                 Notification::UserMessage,
                 Notification::AgentMessage,
                 Notification::AvailableCommands,

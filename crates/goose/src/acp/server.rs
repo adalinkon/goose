@@ -3048,13 +3048,26 @@ impl GooseAcpAgent {
             "perf: load_session messages loaded"
         );
 
-        if let Some((event_bus, mode)) = self
+        let fresh_runtime_load = last_seq.unwrap_or(0) == 0;
+        if let Some((event_bus, replayed_runtime_events)) = self
             .attach_existing_session_runtime(cx, &args.session_id, last_seq)
             .await?
         {
-            replay_session_messages_to_client(cx, &args.session_id, &messages)?;
-            let mode_state = build_mode_state(mode)?;
+            if fresh_runtime_load || !replayed_runtime_events {
+                replay_session_messages_to_client(cx, &args.session_id, &messages)?;
+            }
+            let mode_state = build_mode_state(loaded_mode)?;
+            let resolved = resolve_provider_and_model(&self.config_dir, &goose_session).await;
+            let (model_state, config_options, _) = self
+                .prepare_session_init_config(&resolved, &mode_state, &goose_session)
+                .await;
             let mut response = LoadSessionResponse::new().modes(mode_state);
+            if let Some(ms) = model_state {
+                response = response.models(ms);
+            }
+            if let Some(co) = config_options {
+                response = response.config_options(co);
+            }
             let snapshot = event_bus.snapshot().await;
             let mut meta = serde_json::Map::new();
             meta.insert(
@@ -3169,15 +3182,15 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         session_id: &SessionId,
         last_seq: Option<u64>,
-    ) -> Result<Option<(Arc<SessionEventBus>, GooseMode)>, agent_client_protocol::Error> {
+    ) -> Result<Option<(Arc<SessionEventBus>, bool)>, agent_client_protocol::Error> {
         let session_id_str = session_id.0.to_string();
-        let (event_bus, mode) = {
+        let event_bus = {
             let mut sessions = self.sessions.lock().await;
             let Some(session) = sessions.get_mut(&session_id_str) else {
                 return Ok(None);
             };
             session.last_activity_at = std::time::Instant::now();
-            (session.event_bus.clone(), self.goose_mode)
+            session.event_bus.clone()
         };
 
         let snapshot = event_bus.snapshot().await;
@@ -3189,7 +3202,21 @@ impl GooseAcpAgent {
             ),
         ))?;
 
-        let (replay_events, replay_too_old) = event_bus.replay_since(last_seq).await;
+        let fresh_runtime_load = last_seq.unwrap_or(0) == 0;
+        let (replay_events, replay_too_old) = if fresh_runtime_load {
+            let active_request_id = snapshot.active_request_id.as_deref();
+            let (events, _) = event_bus.replay_since(None).await;
+            (
+                events
+                    .into_iter()
+                    .filter(|event| event.request_id.as_deref() == active_request_id)
+                    .collect(),
+                false,
+            )
+        } else {
+            event_bus.replay_since(last_seq).await
+        };
+        let replayed_runtime_events = !replay_events.is_empty();
         for event in replay_events {
             cx.send_notification(
                 SessionNotification::new(session_id.clone(), event.update.clone())
@@ -3209,7 +3236,7 @@ impl GooseAcpAgent {
             ))?;
         }
 
-        Ok(Some((event_bus, mode)))
+        Ok(Some((event_bus, replayed_runtime_events)))
     }
 
     async fn on_prompt(

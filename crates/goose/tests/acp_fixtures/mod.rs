@@ -281,6 +281,9 @@ pub fn to_notifications(updates: &[SessionUpdate]) -> Vec<Notification> {
             SessionUpdate::ConfigOptionUpdate(_) => out.push(Notification::ConfigOption),
             SessionUpdate::SessionInfoUpdate(update) => {
                 let meta = update.meta.as_ref();
+                if meta.is_some_and(|m| m.contains_key("runtime")) {
+                    continue;
+                }
                 out.push(Notification::SessionInfoUpdate {
                     title: update.title.value().cloned(),
                     updated_at: update.updated_at.value().cloned(),
