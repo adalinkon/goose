@@ -174,6 +174,19 @@ pub struct HookContext {
     pub working_dir: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct HookCommandOutput {
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreToolUseHookOutput {
+    pub updated_input: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
 impl HookContext {
     pub fn new(event: HookEvent, session_id: impl Into<String>) -> Self {
         Self {
@@ -212,12 +225,6 @@ impl HookContext {
         self.working_dir = Some(dir.into());
         self
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HookDecision {
-    Allow,
-    Deny { reason: String, plugin: String },
 }
 
 /// Loads and executes plugin hooks.
@@ -335,24 +342,29 @@ impl HookManager {
         }
     }
 
-    /// Like [`Self::emit`], but stops at the first rule that denies the event
-    /// and returns the denial. A hook denies by exiting with status code 2
-    /// (reason on stderr) or by printing `{"decision":"block","reason":"..."}`
-    /// to stdout. All other failures (spawn, timeout, other non-zero exits)
-    /// are logged and treated as Allow — a misbehaving hook MUST NOT block.
-    pub async fn emit_blocking(&self, event: HookEvent, ctx: HookContext) -> HookDecision {
+    /// Run all matching command hooks for `event` and return their process
+    /// outputs. Hook execution errors are logged and skipped.
+    pub async fn run_hooks_with_output(
+        &self,
+        event: HookEvent,
+        ctx: HookContext,
+    ) -> Vec<HookCommandOutput> {
         let Some(rules) = self.rules.get(&event) else {
-            return HookDecision::Allow;
+            return Vec::new();
         };
+        if rules.is_empty() {
+            return Vec::new();
+        }
 
         let payload = match serde_json::to_string(&ctx) {
             Ok(s) => s,
             Err(err) => {
                 warn!(event = %event, error = %err, "Failed to serialize hook context");
-                return HookDecision::Allow;
+                return Vec::new();
             }
         };
 
+        let mut outputs = Vec::new();
         for rule in rules {
             if let Some(matcher) = &rule.matcher {
                 let target = ctx.matcher_context.as_deref().unwrap_or("");
@@ -363,48 +375,37 @@ impl HookManager {
 
             for action in &rule.actions {
                 let LoadedAction::Command { command, timeout } = action;
-                let output =
-                    match run_command_hook(command, &rule.plugin_root, &payload, *timeout).await {
-                        Ok(o) => o,
-                        Err(err) => {
-                            warn!(
-                                plugin = %rule.plugin_name,
-                                event = %event,
-                                command = %command,
-                                error = %err,
-                                "Plugin hook failed",
-                            );
-                            continue;
-                        }
-                    };
-
-                if let Some(reason) = deny_reason(&output) {
-                    info!(
+                debug!(
+                    plugin = %rule.plugin_name,
+                    event = %event,
+                    command = %command,
+                    "Running plugin hook",
+                );
+                match run_hook_command_with_output(command, &rule.plugin_root, &payload, *timeout)
+                    .await
+                {
+                    Ok(output) => outputs.push(output),
+                    Err(err) => warn!(
                         plugin = %rule.plugin_name,
                         event = %event,
                         command = %command,
-                        reason = %reason,
-                        "Plugin hook denied tool call",
-                    );
-                    return HookDecision::Deny {
-                        reason,
-                        plugin: rule.plugin_name.clone(),
-                    };
+                        error = %err,
+                        "Plugin hook failed",
+                    ),
                 }
             }
         }
 
-        HookDecision::Allow
+        outputs
     }
 }
 
-fn deny_reason(output: &std::process::Output) -> Option<String> {
+pub fn deny_reason(output: &HookCommandOutput) -> Option<String> {
     const DEFAULT: &str = "denied by plugin hook";
     let non_empty = |s: String| if s.is_empty() { DEFAULT.into() } else { s };
 
-    if output.status.code() == Some(2) {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Some(non_empty(stderr));
+    if output.exit_code == Some(2) {
+        return Some(non_empty(output.stderr.trim().to_string()));
     }
 
     #[derive(Deserialize)]
@@ -413,8 +414,7 @@ fn deny_reason(output: &std::process::Output) -> Option<String> {
         reason: Option<String>,
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
+    let trimmed = output.stdout.trim();
     if !trimmed.starts_with('{') {
         return None;
     }
@@ -524,6 +524,41 @@ async fn run_command_hook(
         Ok(res) => res.with_context(|| format!("waiting on hook `{command}`")),
         Err(_) => anyhow::bail!("hook `{command}` timed out after {:?}", timeout),
     }
+}
+
+async fn run_hook_command_with_output(
+    raw_command: &str,
+    plugin_root: &Path,
+    payload: &str,
+    timeout: Duration,
+) -> Result<HookCommandOutput> {
+    let command = expand_plugin_root(raw_command, plugin_root);
+    let mut child = Command::new("sh")
+        .arg("-c")
+        .arg(&command)
+        .env("PLUGIN_ROOT", plugin_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .with_context(|| format!("spawning hook `{command}`"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(payload.as_bytes()).await;
+        let _ = stdin.shutdown().await;
+    }
+
+    let output = match tokio::time::timeout(timeout, child.wait_with_output()).await {
+        Ok(res) => res.with_context(|| format!("waiting on hook `{command}`"))?,
+        Err(_) => anyhow::bail!("hook `{command}` timed out after {:?}", timeout),
+    };
+
+    Ok(HookCommandOutput {
+        exit_code: output.status.code(),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
 }
 
 fn expand_plugin_root(command: &str, plugin_root: &Path) -> String {
@@ -650,5 +685,125 @@ mod tests {
         )
         .await;
         assert!(marker.exists());
+    }
+
+    #[tokio::test]
+    async fn run_hooks_with_output_returns_stdout_and_exit_code() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hooks = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "developer__shell",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "printf '%s' '{\"updatedInput\":{\"command\":\"rtk -- cargo test\",\"timeout_secs\":120}}'"
+                            }
+                        ]
+                    }
+                ]
+            }
+        })
+        .to_string();
+        let root = write_plugin(tmp.path(), "p", &hooks);
+        let mgr = make_manager(vec![DiscoveredPlugin {
+            name: "p".into(),
+            root,
+            scope: PluginScope::User,
+        }]);
+
+        let outputs = mgr
+            .run_hooks_with_output(
+                HookEvent::PreToolUse,
+                HookContext::new(HookEvent::PreToolUse, "s").with_tool("developer__shell", None),
+            )
+            .await;
+
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].exit_code, Some(0));
+        let parsed: PreToolUseHookOutput = serde_json::from_str(outputs[0].stdout.trim()).unwrap();
+        let updated_input = parsed.updated_input.unwrap();
+        assert_eq!(updated_input.get("command").unwrap(), "rtk -- cargo test");
+        assert_eq!(updated_input.get("timeout_secs").unwrap(), 120);
+    }
+
+    #[tokio::test]
+    async fn run_hooks_with_output_preserves_policy_denials() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hooks = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "printf nope >&2 && exit 2"
+                            },
+                            {
+                                "type": "command",
+                                "command": "printf '%s' '{\"decision\":\"block\",\"reason\":\"json deny\"}'"
+                            }
+                        ]
+                    }
+                ]
+            }
+        })
+        .to_string();
+        let root = write_plugin(tmp.path(), "p", &hooks);
+        let mgr = make_manager(vec![DiscoveredPlugin {
+            name: "p".into(),
+            root,
+            scope: PluginScope::User,
+        }]);
+
+        let outputs = mgr
+            .run_hooks_with_output(
+                HookEvent::PreToolUse,
+                HookContext::new(HookEvent::PreToolUse, "s"),
+            )
+            .await;
+
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(deny_reason(&outputs[0]).as_deref(), Some("nope"));
+        assert_eq!(deny_reason(&outputs[1]).as_deref(), Some("json deny"));
+    }
+
+    #[tokio::test]
+    async fn run_hooks_with_output_preserves_nonzero_exit_output() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hooks = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "printf out && printf err >&2 && exit 7"
+                            }
+                        ]
+                    }
+                ]
+            }
+        })
+        .to_string();
+        let root = write_plugin(tmp.path(), "p", &hooks);
+        let mgr = make_manager(vec![DiscoveredPlugin {
+            name: "p".into(),
+            root,
+            scope: PluginScope::User,
+        }]);
+
+        let outputs = mgr
+            .run_hooks_with_output(
+                HookEvent::PreToolUse,
+                HookContext::new(HookEvent::PreToolUse, "s"),
+            )
+            .await;
+
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].exit_code, Some(7));
+        assert_eq!(outputs[0].stdout, "out");
+        assert_eq!(outputs[0].stderr, "err");
     }
 }

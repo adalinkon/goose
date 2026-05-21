@@ -197,6 +197,7 @@ mod tests {
             data_dir: root.to_path_buf(),
             config_dir: root.to_path_buf(),
             goose_platform: GoosePlatform::GooseCli,
+            additional_source_roots: Vec::new(),
         }));
 
         create_router(server, secret_key.to_string())
