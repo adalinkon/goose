@@ -63,3 +63,11 @@ export interface Session {
   messageCount: number;
   userSetName?: boolean;
 }
+
+export type SessionIndexStatus = "idle" | "running" | "wait" | "dead";
+
+export interface SessionIndexRuntime {
+  status: SessionIndexStatus;
+  revision: number;
+  updatedAt?: string;
+}

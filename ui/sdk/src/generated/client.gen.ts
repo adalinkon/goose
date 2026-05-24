@@ -11,6 +11,8 @@ import type {
   AddConfigExtensionRequest,
   AddExtensionRequest,
   ArchiveSessionRequest,
+  AttachSessionRuntimeRequest,
+  AttachSessionRuntimeResponse,
   CreateSourceRequest,
   CreateSourceResponse,
   CustomProviderCreateRequest,
@@ -26,6 +28,7 @@ import type {
   DefaultsSaveRequest,
   DeleteSessionRequest,
   DeleteSourceRequest,
+  DetachSessionRuntimeRequest,
   DictationConfigRequest,
   DictationConfigResponse,
   DictationModelCancelRequest,
@@ -97,6 +100,7 @@ import type {
   UpdateWorkingDirRequest,
 } from './types.gen.js';
 import {
+  zAttachSessionRuntimeResponse,
   zCreateSourceResponse,
   zCustomProviderCreateResponse,
   zCustomProviderDeleteResponse,
@@ -159,6 +163,24 @@ export class GooseExtClient {
   ): Promise<ReadResourceResponse> {
     const raw = await this.conn.extMethod("_goose/resource/read", params);
     return zReadResourceResponse.parse(raw) as ReadResourceResponse;
+  }
+
+  async GooseSessionRuntimeAttach(
+    params: AttachSessionRuntimeRequest,
+  ): Promise<AttachSessionRuntimeResponse> {
+    const raw = await this.conn.extMethod(
+      "_goose/session/runtime/attach",
+      params,
+    );
+    return zAttachSessionRuntimeResponse.parse(
+      raw,
+    ) as AttachSessionRuntimeResponse;
+  }
+
+  async GooseSessionRuntimeDetach(
+    params: DetachSessionRuntimeRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/session/runtime/detach", params);
   }
 
   async GooseWorkingDirUpdate(params: UpdateWorkingDirRequest): Promise<void> {

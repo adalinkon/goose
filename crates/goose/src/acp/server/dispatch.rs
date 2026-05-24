@@ -12,6 +12,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
     ) -> impl std::future::Future<Output = Result<Handled<Dispatch>, agent_client_protocol::Error>> + Send
     {
         let agent = self.agent.clone();
+        let connection_id = self.connection_id.clone();
 
         // The MatchDispatchFrom chain produces an ~85KB async state machine.
         // Box::pin moves it to the heap so it doesn't overflow the tokio worker stack.
@@ -22,6 +23,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
             MatchDispatchFrom::new(message, &cx)
                 .if_request(
                     |req: InitializeRequest, responder: Responder<InitializeResponse>| async {
+                        agent.subscribe_global_events(&cx, &connection_id).await;
                         responder.respond_with_result(agent.on_initialize(req).await)
                     },
                 )
@@ -36,8 +38,9 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                     |req: NewSessionRequest, responder: Responder<NewSessionResponse>| async {
                         let agent = agent.clone();
                         let cx_clone = cx.clone();
+                        let connection_id = connection_id.clone();
                         cx.spawn(async move {
-                            responder.respond_with_result(agent.on_new_session(&cx_clone, req).await)?;
+                            responder.respond_with_result(agent.on_new_session(&cx_clone, &connection_id, req).await)?;
                             Ok(())
                         })?;
                         Ok(())
@@ -48,8 +51,9 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                     |req: LoadSessionRequest, responder: Responder<LoadSessionResponse>| async {
                         let agent = agent.clone();
                         let cx_clone = cx.clone();
+                        let connection_id = connection_id.clone();
                         cx.spawn(async move {
-                            match agent.on_load_session(&cx_clone, req).await {
+                            match agent.on_load_session(&cx_clone, &connection_id, req).await {
                                 Ok(response) => {
                                     responder.respond(response)?;
                                 }
@@ -129,6 +133,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                     return Ok(());
                                 }
                             }
+                            agent.publish_session_updated(&session_id.0).await;
                             // Respond immediately using the current provider inventory snapshot.
                             let (notification, config_options) = agent.build_config_update(&session_id).await?;
                             cx.send_notification(notification)?;
@@ -286,6 +291,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             match agent.on_set_mode(&session_id.0, &mode_id.0).await {
                                 Ok(resp) => {
                                     // Notify before responding so clients see the mode update before block_task unblocks.
+                                    agent.publish_session_updated(&session_id.0).await;
                                     cx.send_notification(SessionNotification::new(
                                         session_id,
                                         SessionUpdate::CurrentModeUpdate(
@@ -314,6 +320,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             let session_id = req.session_id.clone();
                             match agent.on_set_model(&session_id.0, &req.model_id.0).await {
                                 Ok(resp) => {
+                                    agent.publish_session_updated(&session_id.0).await;
                                     let (notification, _) = agent.build_config_update(&session_id).await?;
                                     cx.send_notification(notification)?;
                                     responder.respond(resp)?;
@@ -356,10 +363,12 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                 .if_request({
                     let agent = agent.clone();
                     let cx = cx.clone();
+                    let connection_id = connection_id.clone();
                     |req: ForkSessionRequest, responder: Responder<ForkSessionResponse>| async move {
                         let cx_spawn = cx.clone();
+                        let connection_id = connection_id.clone();
                         cx.spawn(async move {
-                            responder.respond_with_result(agent.on_fork_session(&cx_spawn, req).await)?;
+                            responder.respond_with_result(agent.on_fork_session(&cx_spawn, &connection_id, req).await)?;
                             Ok(())
                         })?;
                         Ok(())
@@ -369,11 +378,15 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                 .otherwise({
                     let agent = agent.clone();
                     let cx = cx.clone();
+                    let connection_id = connection_id.clone();
                     |message: Dispatch| async move {
                         match message {
                             Dispatch::Request(req, responder) => {
-                                cx.spawn(async move {
-                                    match agent.dispatch_custom_request(&req.method, req.params).await {
+                                let cx_spawn = cx.clone();
+                                let cx_for_handler = cx_spawn.clone();
+                                let connection_id = connection_id.clone();
+                                cx_spawn.spawn(async move {
+                                    match agent.dispatch_custom_request_with_context(&cx_for_handler, &connection_id, &req.method, req.params).await {
                                         Ok(json) => responder.respond(json)?,
                                         Err(e) => responder.respond_with_error(e)?,
                                     }

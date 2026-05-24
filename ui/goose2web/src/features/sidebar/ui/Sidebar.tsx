@@ -19,17 +19,13 @@ import { cn } from "@/shared/lib/cn";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
 import { useChatStore } from "@/features/chat/stores/chatStore";
-import {
-  selectSessionMessageCountById,
-  selectSessionStateById,
-} from "@/features/chat/stores/chatSelectors";
-import { INITIAL_SESSION_CHAT_RUNTIME } from "@/shared/types/chat";
+import { selectSessionMessageCountById } from "@/features/chat/stores/chatSelectors";
+import type { SessionIndexStatus } from "@/shared/types/chat";
 import {
   getVisibleSessionsByMessageCount,
   useChatSessionStore,
 } from "@/features/chat/stores/chatSessionStore";
 import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
-import { isSessionRunning } from "@/features/chat/lib/sessionActivity";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { selectProjects } from "@/features/projects/stores/projectSelectors";
@@ -169,7 +165,9 @@ export function Sidebar({
   const [sectionVisibility, setSectionVisibility] = useState(
     getStoredSectionVisibility,
   );
-  const sessionStateById = useChatStore(selectSessionStateById);
+  const sessionRuntimeById = useChatSessionStore(
+    (state) => state.sessionRuntimeById,
+  );
   const sessions = useChatSessionStore(selectSessions);
   const getPersonaById = useAgentStore((s) => s.getPersonaById);
   const projectStoreProjects = useProjectStore(selectProjects);
@@ -177,9 +175,7 @@ export function Sidebar({
     sessions,
     sessionMessageCountById,
   );
-  const activeSessions = visibleSessions.filter(
-    (session) => !session.archivedAt,
-  );
+  const activeSessions = sessions.filter((session) => !session.archivedAt);
 
   useEffect(() => {
     if (collapsed) {
@@ -227,23 +223,22 @@ export function Sidebar({
       sessionId: string;
       projectId?: string;
       updatedAt: string;
-      isRunning: boolean;
+      runtimeStatus: SessionIndexStatus;
       hasUnread: boolean;
     };
     const byProject: Record<string, SessionItem[]> = {};
     const standalone: SessionItem[] = [];
-    for (const session of visibleSessions) {
+    for (const session of sessions) {
       if (session.archivedAt) continue;
-      const runtime =
-        sessionStateById[session.id] ?? INITIAL_SESSION_CHAT_RUNTIME;
+      const runtime = sessionRuntimeById[session.id];
       const item: SessionItem = {
         id: session.id,
         title: session.title,
         sessionId: session.id,
         projectId: session.projectId ?? undefined,
         updatedAt: session.updatedAt,
-        isRunning: isSessionRunning(runtime.chatState),
-        hasUnread: runtime.hasUnread,
+        runtimeStatus: runtime?.status ?? "idle",
+        hasUnread: false,
       };
       if (session.projectId && validProjectIds.has(session.projectId)) {
         if (!byProject[session.projectId]) byProject[session.projectId] = [];

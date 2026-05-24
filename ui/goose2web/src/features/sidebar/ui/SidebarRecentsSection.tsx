@@ -2,6 +2,7 @@ import { useCallback, useState, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { IconChevronDown, IconEdit, IconMessage } from "@tabler/icons-react";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
+import type { SessionIndexStatus } from "@/shared/types/chat";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { SessionActivityIndicator } from "@/shared/ui/SessionActivityIndicator";
@@ -11,7 +12,7 @@ interface TabInfo {
   id: string;
   title: string;
   projectId?: string;
-  isRunning?: boolean;
+  runtimeStatus?: SessionIndexStatus;
   hasUnread?: boolean;
 }
 
@@ -158,8 +159,9 @@ export function SidebarRecentsSection({
               >
                 <IconMessage className="size-4" />
                 <SessionActivityIndicator
-                  isRunning={session.isRunning}
+                  status={session.runtimeStatus ?? "idle"}
                   hasUnread={session.hasUnread}
+                  showIdle
                   variant="overlay"
                 />
               </Button>
@@ -175,7 +177,7 @@ export function SidebarRecentsSection({
                   id={session.id}
                   title={session.title}
                   isActive={isActive}
-                  isRunning={session.isRunning ?? false}
+                  runtimeStatus={session.runtimeStatus ?? "idle"}
                   hasUnread={session.hasUnread ?? false}
                   onSelect={onSelectSession}
                   onRename={onRenameChat}

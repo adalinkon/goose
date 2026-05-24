@@ -24,12 +24,14 @@ import {
   getToolChainSummary,
 } from "@/shared/api/acpToolCallIdentity";
 import type {
+  MessageContent,
   ToolCallLocation,
   ToolKind,
   ToolRequestContent,
+  ToolResponseContent,
 } from "@/shared/types/messages";
 import { getPresetMessageId, clearActiveMessageId } from "./streamTracking";
-import type { SessionLiveBuffer } from "./types";
+import type { RuntimeNotificationMeta, SessionLiveBuffer } from "./types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -81,6 +83,79 @@ function getChunkMessageId(update: SessionUpdate): string | null {
   return "messageId" in update && typeof update.messageId === "string"
     ? update.messageId
     : null;
+}
+
+function findMessage(sessionId: string, messageId: string) {
+  return useChatStore
+    .getState()
+    .messagesBySession[sessionId]?.find((message) => message.id === messageId);
+}
+
+function ensureExactAssistantMessage(
+  sessionId: string,
+  messageId: string,
+  created?: number,
+) {
+  const store = useChatStore.getState();
+  const existing = findMessage(sessionId, messageId);
+  if (existing) return existing;
+
+  store.appendMessage(sessionId, {
+    id: messageId,
+    role: "assistant",
+    created: created ?? Date.now(),
+    content: [],
+    metadata: {
+      userVisible: true,
+      agentVisible: true,
+      completionStatus: "inProgress",
+    },
+  });
+  return findMessage(sessionId, messageId);
+}
+
+function hasToolResponse(
+  message: {
+    content: Array<{
+      type: string;
+      id?: string;
+      isError?: boolean;
+      result?: string;
+    }>;
+  },
+  toolCallId: string,
+  response: ToolResponseContent,
+): boolean {
+  return message.content.some(
+    (content) =>
+      content.type === "toolResponse" &&
+      content.id === toolCallId &&
+      content.isError === response.isError &&
+      content.result === response.result,
+  );
+}
+
+function appendRuntimeText(
+  sessionId: string,
+  messageId: string,
+  text: string,
+  created?: number,
+): void {
+  if (!text) return;
+  ensureExactAssistantMessage(sessionId, messageId, created);
+  useChatStore.getState().appendTextByMessageId(sessionId, messageId, text);
+}
+
+function appendRuntimeContent(
+  sessionId: string,
+  messageId: string,
+  content: MessageContent,
+  created?: number,
+): void {
+  ensureExactAssistantMessage(sessionId, messageId, created);
+  useChatStore
+    .getState()
+    .appendContentByMessageId(sessionId, messageId, content);
 }
 
 export function applyHistoryReplayUpdate(
@@ -343,6 +418,126 @@ export function reduceLiveUpdateToBuffer(
 
     default:
       break;
+  }
+}
+
+export function applyRuntimeReplayUpdate(
+  sessionId: string,
+  update: SessionUpdate,
+  meta: RuntimeNotificationMeta,
+): boolean {
+  const messageId = meta.messageId ?? meta.runtimeEvent?.messageId;
+  const toolCallId = meta.runtimeEvent?.toolCallId;
+
+  switch (update.sessionUpdate) {
+    case "agent_message_chunk": {
+      if (!messageId) return false;
+      if (update.content.type === "text" && "text" in update.content) {
+        appendRuntimeText(sessionId, messageId, update.content.text, meta.created);
+      }
+      return true;
+    }
+
+    case "agent_thought_chunk": {
+      if (!messageId) return false;
+      if (update.content.type === "text" && "text" in update.content) {
+        appendRuntimeContent(
+          sessionId,
+          messageId,
+          { type: "thinking", text: update.content.text },
+          meta.created,
+        );
+      }
+      return true;
+    }
+
+    case "tool_call": {
+      if (!messageId) return false;
+      if (toolCallId && toolCallId !== update.toolCallId) return false;
+      const msg = ensureExactAssistantMessage(sessionId, messageId, meta.created);
+      if (!msg) return false;
+      if (
+        msg.content.some(
+          (content) => content.type === "toolRequest" && content.id === update.toolCallId,
+        )
+      ) {
+        return true;
+      }
+      const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
+      useChatStore.getState().appendToolRequest(sessionId, messageId, {
+        type: "toolRequest",
+        id: update.toolCallId,
+        name: update.title,
+        ...identity,
+        arguments: rawInputToArguments(update.rawInput),
+        status: "in_progress",
+        ...toolCallUpdatePatch(update),
+        startedAt: meta.created ?? Date.now(),
+        ...(chainSummary ? { chainSummary } : {}),
+      });
+      return true;
+    }
+
+    case "tool_call_update": {
+      if (!messageId) return false;
+      if (toolCallId && toolCallId !== update.toolCallId) return false;
+      const msg = ensureExactAssistantMessage(sessionId, messageId, meta.created);
+      if (!msg) return false;
+
+      const identity = getToolCallIdentity(update);
+      const chainSummary = getToolChainSummary(update);
+      const patch = {
+        ...(update.title ? { name: update.title } : {}),
+        ...identity,
+        ...toolCallUpdatePatch(update),
+        ...(chainSummary ? { chainSummary } : {}),
+      };
+      if (Object.keys(patch).length > 0) {
+        useChatStore.getState().patchToolRequest(sessionId, update.toolCallId, patch);
+      }
+
+      if (update.status === "completed" || update.status === "failed") {
+        const response: ToolResponseContent = {
+          type: "toolResponse",
+          id: update.toolCallId,
+          name: update.title ?? "",
+          result: extractToolResultText(update),
+          structuredContent: extractToolStructuredContent(update),
+          isError: update.status === "failed",
+        };
+        const current = findMessage(sessionId, messageId);
+        if (current && !hasToolResponse(current, update.toolCallId, response)) {
+          useChatStore.getState().patchToolRequest(sessionId, update.toolCallId, {
+            ...identity,
+            ...toolCallUpdatePatch(update),
+            status: update.status,
+          });
+          useChatStore
+            .getState()
+            .appendToolResponse(sessionId, update.toolCallId, response);
+        }
+        if (update.status === "completed") {
+          attachMcpAppPayload(
+            sessionId,
+            update.toolCallId,
+            update.title ?? "",
+            update,
+            false,
+          );
+        }
+      }
+      return true;
+    }
+
+    case "session_info_update":
+    case "config_option_update":
+    case "usage_update":
+      applySharedUpdate(sessionId, update);
+      return true;
+
+    default:
+      return true;
   }
 }
 

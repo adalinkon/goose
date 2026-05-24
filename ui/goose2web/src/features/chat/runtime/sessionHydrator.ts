@@ -3,11 +3,15 @@ import { useChatStore } from "../stores/chatStore";
 import { useChatSessionStore } from "../stores/chatSessionStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { resolveSessionCwd } from "@/features/projects/lib/sessionCwdSelection";
-import { acpLoadSession } from "@/shared/api/acp";
+import { acpAttachSessionRuntime, acpLoadSession } from "@/shared/api/acp";
 import {
   clearReplayBuffer,
   getAndDeleteReplayBuffer,
 } from "../hooks/replayBuffer";
+import {
+  clearDeferredRuntimeReplay,
+  clearSessionRuntimeBuffers,
+} from "./sessionBuffers";
 import { clearReplayPerf, getReplayPerf } from "./replayPerf";
 import { perfLog } from "@/shared/lib/perfLog";
 import { getLoadSessionRuntimeSnapshot } from "./metadata";
@@ -33,6 +37,7 @@ export async function hydrateSession(
     onRuntimeSnapshot?: (snapshot: RuntimeSnapshot) => void;
     onHistoryReady?: () => void;
     onFailed?: () => void;
+    shouldApply?: () => boolean;
   },
 ): Promise<LoadSessionResponse | null> {
   const sid = sessionId.slice(0, 8);
@@ -43,16 +48,38 @@ export async function hydrateSession(
   store.setSessionLoading(sessionId, true);
   store.setRuntimeView(sessionId, { phase: "hydrating" });
   clearReplayBuffer(sessionId);
+  clearDeferredRuntimeReplay(sessionId);
 
   try {
     const workingDir = await resolveWorkingDir(sessionId);
     const response = await acpLoadSession(sessionId, workingDir, {
       lastSeq: options?.lastSeq,
     });
+    if (options?.shouldApply && !options.shouldApply()) {
+      return response;
+    }
+
+    const responseMeta = isRecord(response._meta) ? response._meta : {};
+    if (responseMeta.replayTooOld === true) {
+      clearSessionRuntimeBuffers(sessionId);
+      if ((options?.lastSeq ?? 0) > 0) {
+        return hydrateSession(sessionId, {
+          ...options,
+          lastSeq: 0,
+        });
+      }
+    }
 
     const snapshot = getLoadSessionRuntimeSnapshot(response);
     if (snapshot) {
       options?.onRuntimeSnapshot?.(snapshot);
+    }
+
+    const attachLastSeq =
+      (options?.lastSeq ?? 0) > 0 ? options?.lastSeq : snapshot?.lastSeq;
+    await acpAttachSessionRuntime(sessionId, attachLastSeq);
+    if (options?.shouldApply && !options.shouldApply()) {
+      return response;
     }
 
     const buffer = getAndDeleteReplayBuffer(sessionId);
@@ -71,6 +98,9 @@ export async function hydrateSession(
     );
     return response;
   } catch (err) {
+    if (options?.shouldApply && !options.shouldApply()) {
+      return null;
+    }
     console.error("Failed to load session messages:", err);
     clearReplayBuffer(sessionId);
     useChatStore.getState().setSessionLoading(sessionId, false);
@@ -78,4 +108,8 @@ export async function hydrateSession(
     options?.onFailed?.();
     return null;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

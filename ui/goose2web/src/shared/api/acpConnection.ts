@@ -22,6 +22,10 @@ let notificationHandler: AcpNotificationHandler | null = null;
 
 export interface AcpNotificationHandler {
   handleSessionNotification(notification: SessionNotification): Promise<void>;
+  handleExtNotification?(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<void>;
 }
 
 export function setNotificationHandler(handler: AcpNotificationHandler): void {
@@ -31,6 +35,8 @@ export function setNotificationHandler(handler: AcpNotificationHandler): void {
 let clientPromise: Promise<GooseClient> | null = null;
 let resolvedClient: GooseClient | null = null;
 let resolvedClientUrl: string | null = null;
+let connectionGeneration = 0;
+const connectionReadyListeners = new Set<(generation: number) => void>();
 
 type AcpBootstrapState =
   | { state: "ready"; url: string }
@@ -49,7 +55,14 @@ function createClientCallbacks(): () => Client {
     requestPermission: async (
       args: RequestPermissionRequest,
     ): Promise<RequestPermissionResponse> => {
-      const optionId = args.options?.[0]?.optionId ?? "approve";
+      const rejectOption =
+        args.options?.find(
+          (option) =>
+            option.kind === "reject_once" ||
+            option.optionId === "reject_once" ||
+            option.optionId === "RejectOnce",
+        ) ?? args.options?.at(-1);
+      const optionId = rejectOption?.optionId ?? "reject_once";
       return {
         outcome: {
           outcome: "selected",
@@ -61,6 +74,15 @@ function createClientCallbacks(): () => Client {
     sessionUpdate: async (notification: SessionNotification): Promise<void> => {
       if (notificationHandler) {
         await notificationHandler.handleSessionNotification(notification);
+      }
+    },
+
+    extNotification: async (
+      method: string,
+      params: Record<string, unknown>,
+    ): Promise<void> => {
+      if (notificationHandler?.handleExtNotification) {
+        await notificationHandler.handleExtNotification(method, params);
       }
     },
   });
@@ -134,6 +156,10 @@ async function initializeConnection(): Promise<GooseClient> {
   monitorConnection(client);
   resolvedClientUrl = wsUrl;
   lastBootstrapStatus = { state: "connected", url: wsUrl };
+  connectionGeneration += 1;
+  for (const listener of connectionReadyListeners) {
+    listener(connectionGeneration);
+  }
 
   return client;
 }
@@ -214,3 +240,18 @@ export function getClientSync(): GooseClient | null {
 export function getAcpBootstrapStatus() {
   return lastBootstrapStatus;
 }
+
+export function getAcpConnectionGeneration(): number {
+  return connectionGeneration;
+}
+
+export function onAcpConnectionReady(
+  listener: (generation: number) => void,
+): () => void {
+  connectionReadyListeners.add(listener);
+  return () => {
+    connectionReadyListeners.delete(listener);
+  };
+}
+
+export const onAcpConnectionReconnected = onAcpConnectionReady;

@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
+use agent_client_protocol::schema::Meta;
 use agent_client_protocol::schema::{ListSessionsRequest, ListSessionsResponse};
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::AcpServerConnection;
@@ -46,6 +47,30 @@ async fn seed_list_sessions(data_root: &Path, working_dir: &Path, count: usize) 
     }
 }
 
+async fn seed_archived_list_session(data_root: &Path, working_dir: &Path) -> String {
+    let session_manager = SessionManager::new(data_root.to_path_buf());
+    let session = session_manager
+        .create_session(
+            working_dir.to_path_buf(),
+            "Archived session".to_string(),
+            SessionType::Acp,
+            GooseMode::default(),
+        )
+        .await
+        .unwrap();
+    session_manager
+        .add_message(&session.id, &Message::user().with_text("hello"))
+        .await
+        .unwrap();
+    session_manager
+        .update(&session.id)
+        .archived_at(Some(chrono::Utc::now()))
+        .apply()
+        .await
+        .unwrap();
+    session.id
+}
+
 async fn new_connection(data_root: &Path) -> AcpServerConnection {
     let openai = OpenAiFixture::new(
         vec![],
@@ -76,6 +101,17 @@ async fn list_sessions_request(
 fn assert_invalid_params(error: anyhow::Error) {
     let acp_error = error.downcast::<agent_client_protocol::Error>().unwrap();
     assert_eq!(acp_error.code, ErrorCode::InvalidParams);
+}
+
+fn list_sessions_meta_include_archived(include_archived: bool) -> Meta {
+    serde_json::json!({
+        "goose": {
+            "includeArchived": include_archived
+        }
+    })
+    .as_object()
+    .unwrap()
+    .clone()
 }
 
 #[test]
@@ -119,6 +155,47 @@ fn test_list_sessions_pagination() {
             .sessions
             .iter()
             .all(|session| session.session_id != *second_id));
+    });
+}
+
+#[test]
+fn test_list_sessions_archive_filter() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        seed_list_sessions(data_root.path(), cwd.path(), 1).await;
+        let archived_id = seed_archived_list_session(data_root.path(), cwd.path()).await;
+        let conn = new_connection(data_root.path()).await;
+
+        let default_response = list_sessions_request(&conn, ListSessionsRequest::new())
+            .await
+            .unwrap();
+        assert!(default_response
+            .sessions
+            .iter()
+            .all(|session| session.session_id.0.as_ref() != archived_id.as_str()));
+
+        let exclude_response = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new().meta(list_sessions_meta_include_archived(false)),
+        )
+        .await
+        .unwrap();
+        assert!(exclude_response
+            .sessions
+            .iter()
+            .all(|session| session.session_id.0.as_ref() != archived_id.as_str()));
+
+        let include_response = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new().meta(list_sessions_meta_include_archived(true)),
+        )
+        .await
+        .unwrap();
+        assert!(include_response
+            .sessions
+            .iter()
+            .any(|session| session.session_id.0.as_ref() == archived_id.as_str()));
     });
 }
 

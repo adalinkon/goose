@@ -149,6 +149,97 @@
       "x-side": "agent",
       "x-method": "_goose/resource/read"
     },
+    "AttachSessionRuntimeRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "lastSeq": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Attach this ACP connection to a session's full runtime stream.",
+      "x-side": "agent",
+      "x-method": "_goose/session/runtime/attach"
+    },
+    "AttachSessionRuntimeResponse": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/SessionRuntimeSnapshotDto"
+        },
+        "replayTooOld": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "sessionId",
+        "snapshot"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/session/runtime/attach"
+    },
+    "SessionRuntimeSnapshotDto": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/SessionRuntimeIndexStatusDto"
+        },
+        "activeRequestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastSeq": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "SessionRuntimeIndexStatusDto": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "running",
+        "wait",
+        "dead"
+      ]
+    },
+    "DetachSessionRuntimeRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Detach this ACP connection from a session's full runtime stream.",
+      "x-side": "agent",
+      "x-method": "_goose/session/runtime/detach"
+    },
     "UpdateWorkingDirRequest": {
       "type": "object",
       "properties": {
@@ -2655,6 +2746,24 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/AttachSessionRuntimeRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/runtime/attach",
+                  "title": "AttachSessionRuntimeRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DetachSessionRuntimeRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/runtime/detach",
+                  "title": "DetachSessionRuntimeRequest"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/UpdateWorkingDirRequest"
                     }
                   ],
@@ -3163,6 +3272,14 @@
                         }
                       ],
                       "title": "ReadResourceResponse"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/AttachSessionRuntimeResponse"
+                        }
+                      ],
+                      "title": "AttachSessionRuntimeResponse"
                     },
                     {
                       "allOf": [

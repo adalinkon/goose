@@ -4,7 +4,11 @@ import {
   acpListSessions,
   type AcpSessionInfo,
 } from "@/shared/api/acp";
-import type { Session } from "@/shared/types/chat";
+import type {
+  Session,
+  SessionIndexRuntime,
+  SessionIndexStatus,
+} from "@/shared/types/chat";
 import {
   DEFAULT_CHAT_TITLE,
   normalizeAcpTitle,
@@ -65,6 +69,7 @@ export function getVisibleSessionsByMessageCount<
 
 interface ChatSessionStoreState {
   sessions: ChatSession[];
+  sessionRuntimeById: Record<string, SessionIndexRuntime>;
   activeSessionId: string | null;
   isLoading: boolean;
   hasHydratedSessions: boolean;
@@ -87,6 +92,12 @@ interface ChatSessionStoreActions {
   loadSessions: () => Promise<void>;
   patchSession: (id: string, patch: Partial<ChatSession>) => void;
   addSession: (session: ChatSession) => void;
+  applySessionRuntime: (
+    sessionId: string,
+    status: SessionIndexStatus,
+    revision: number,
+    updatedAt?: string,
+  ) => void;
   archiveSession: (id: string) => Promise<void>;
   unarchiveSession: (id: string) => Promise<void>;
 
@@ -145,6 +156,7 @@ export function sessionToChatSession(session: Session): ChatSession {
 
 export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
   sessions: [],
+  sessionRuntimeById: {},
   activeSessionId: null,
   isLoading: false,
   hasHydratedSessions: false,
@@ -181,17 +193,46 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
   loadSessions: async () => {
     set({ isLoading: true });
     try {
-      const acpSessions = await acpListSessions();
+      const acpSessions = await acpListSessions({ includeArchived: false });
       const sessions = sortByUpdatedAtDesc(
         acpSessions.map(acpSessionToChatSession),
       );
+      const runtimes = acpSessions
+        .filter(
+          (
+            session,
+          ): session is AcpSessionInfo & {
+            runtimeStatus: SessionIndexStatus;
+          } => Boolean(session.runtimeStatus),
+        )
+        .map((session) => ({
+          sessionId: session.sessionId,
+          status: session.runtimeStatus,
+          revision: session.sessionIndexRevision ?? 0,
+          updatedAt: session.updatedAt ?? undefined,
+        }));
       const activeSessionId = get().activeSessionId;
       const activeSessionStillExists =
         activeSessionId == null ||
         sessions.some((session) => session.id === activeSessionId);
-      set({
-        sessions,
-        activeSessionId: activeSessionStillExists ? activeSessionId : null,
+      set((state) => {
+        const sessionRuntimeById = { ...state.sessionRuntimeById };
+        for (const runtime of runtimes) {
+          const current = sessionRuntimeById[runtime.sessionId];
+          if (current && current.revision > runtime.revision) {
+            continue;
+          }
+          sessionRuntimeById[runtime.sessionId] = {
+            status: runtime.status,
+            revision: runtime.revision,
+            updatedAt: runtime.updatedAt,
+          };
+        }
+        return {
+          sessions,
+          activeSessionId: activeSessionStillExists ? activeSessionId : null,
+          sessionRuntimeById,
+        };
       });
     } catch (error) {
       console.error("Failed to load sessions from ACP:", error);
@@ -225,6 +266,25 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
         return { sessions: updated };
       }
       return { sessions: [session, ...state.sessions] };
+    });
+  },
+
+  applySessionRuntime: (sessionId, status, revision, updatedAt) => {
+    set((state) => {
+      const current = state.sessionRuntimeById[sessionId];
+      if (current && current.revision > revision) {
+        return state;
+      }
+      return {
+        sessionRuntimeById: {
+          ...state.sessionRuntimeById,
+          [sessionId]: {
+            status,
+            revision,
+            updatedAt,
+          },
+        },
+      };
     });
   },
 

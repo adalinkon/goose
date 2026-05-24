@@ -73,6 +73,49 @@ export const zReadResourceResponse = z.object({
 });
 
 /**
+ * Attach this ACP connection to a session's full runtime stream.
+ */
+export const zAttachSessionRuntimeRequest = z.object({
+    sessionId: z.string(),
+    lastSeq: z.union([
+        z.coerce.bigint().gte(BigInt(0)).max(BigInt('18446744073709551615'), { message: 'Invalid value: Expected uint64 to be <= 18446744073709551615' }),
+        z.null()
+    ]).optional()
+});
+
+export const zSessionRuntimeIndexStatusDto = z.enum([
+    'idle',
+    'running',
+    'wait',
+    'dead'
+]);
+
+export const zSessionRuntimeSnapshotDto = z.object({
+    status: zSessionRuntimeIndexStatusDto,
+    activeRequestId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    lastSeq: z.union([
+        z.coerce.bigint().gte(BigInt(0)).max(BigInt('18446744073709551615'), { message: 'Invalid value: Expected uint64 to be <= 18446744073709551615' }),
+        z.null()
+    ]).optional()
+});
+
+export const zAttachSessionRuntimeResponse = z.object({
+    sessionId: z.string(),
+    snapshot: zSessionRuntimeSnapshotDto,
+    replayTooOld: z.boolean().optional().default(false)
+});
+
+/**
+ * Detach this ACP connection from a session's full runtime stream.
+ */
+export const zDetachSessionRuntimeRequest = z.object({
+    sessionId: z.string()
+});
+
+/**
  * Update the working directory for a session.
  */
 export const zUpdateWorkingDirRequest = z.object({
@@ -1077,6 +1120,8 @@ export const zExtRequest = z.object({
             zGetToolsRequest,
             zGooseToolCallRequest,
             zReadResourceRequest,
+            zAttachSessionRuntimeRequest,
+            zDetachSessionRuntimeRequest,
             zUpdateWorkingDirRequest,
             zDeleteSessionRequest,
             zGetExtensionsRequest,
@@ -1144,6 +1189,7 @@ export const zExtResponse = z.union([
                 zGetToolsResponse,
                 zGooseToolCallResponse,
                 zReadResourceResponse,
+                zAttachSessionRuntimeResponse,
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,

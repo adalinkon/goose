@@ -429,6 +429,59 @@ pub struct ImportSessionResponse {
     pub message_count: u64,
 }
 
+/// Attach this ACP connection to a session's full runtime stream.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/session/runtime/attach", response = AttachSessionRuntimeResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachSessionRuntimeRequest {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seq: Option<u64>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachSessionRuntimeResponse {
+    pub session_id: String,
+    pub snapshot: SessionRuntimeSnapshotDto,
+    #[serde(default)]
+    pub replay_too_old: bool,
+}
+
+/// Detach this ACP connection from a session's full runtime stream.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/session/runtime/detach", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DetachSessionRuntimeRequest {
+    pub session_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionRuntimeIndexStatusDto {
+    #[default]
+    Idle,
+    Running,
+    Wait,
+    Dead,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRuntimeIndexStateDto {
+    pub status: SessionRuntimeIndexStatusDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRuntimeSnapshotDto {
+    pub status: SessionRuntimeIndexStatusDto,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seq: Option<u64>,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfigKey {

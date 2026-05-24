@@ -97,6 +97,21 @@ export interface RuntimeNotificationMeta {
   seq?: number;
   kind?: string;
   delivery?: string;
+  requestId?: string;
+  messageId?: string;
+  created?: number;
+  runtimeEvent?: {
+    protocolVersion: 1;
+    eventId: string;
+    seq: number;
+    kind: string;
+    delivery: "replay" | "snapshot";
+    requestId?: string;
+    messageId?: string;
+    toolCallId?: string;
+  };
+  protocolViolation?: string;
+  replayTooOld?: boolean;
   runtime?: RuntimeSnapshot;
 }
 

@@ -6,7 +6,11 @@ import {
   discoverAcpProvidersFromEntries,
   type AcpProvider,
 } from "@/shared/api/acp";
-import { setNotificationHandler, getClient } from "@/shared/api/acpConnection";
+import {
+  setNotificationHandler,
+  getClient,
+  onAcpConnectionReady,
+} from "@/shared/api/acpConnection";
 import notificationHandler from "@/shared/api/acpNotificationHandler";
 import { perfLog } from "@/shared/lib/perfLog";
 import {
@@ -44,6 +48,9 @@ export function useAppStartup() {
 
   useEffect(() => {
     let cancelled = false;
+    const stopConnectionReadyListener = onAcpConnectionReady(() => {
+      void useChatSessionStore.getState().loadSessions();
+    });
     (async () => {
       const tStartup = performance.now();
       perfLog("[perf:startup] useAppStartup begin");
@@ -221,6 +228,7 @@ export function useAppStartup() {
 
     return () => {
       cancelled = true;
+      stopConnectionReadyListener();
     };
   }, []);
 

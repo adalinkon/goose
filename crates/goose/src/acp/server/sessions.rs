@@ -30,6 +30,7 @@ impl GooseAcpAgent {
                 }
             }
         }
+        self.publish_session_updated(session_id).await;
 
         Ok(EmptyResponse {})
     }
@@ -43,6 +44,7 @@ impl GooseAcpAgent {
             .await
             .internal_err()?;
         self.sessions.lock().await.remove(&req.session_id);
+        self.publish_session_removed(&req.session_id).await;
         Ok(EmptyResponse {})
     }
 
@@ -69,6 +71,7 @@ impl GooseAcpAgent {
             .internal_err()?;
 
         let msg_count = session.message_count as u64;
+        self.publish_session_added(&session.id).await;
 
         Ok(ImportSessionResponse {
             session_id: session.id,
@@ -88,6 +91,7 @@ impl GooseAcpAgent {
             .apply()
             .await
             .internal_err()?;
+        self.publish_session_updated(&req.session_id).await;
         Ok(EmptyResponse {})
     }
 
@@ -101,6 +105,7 @@ impl GooseAcpAgent {
             .apply()
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
+        self.publish_session_updated(&req.session_id).await;
         Ok(EmptyResponse {})
     }
 
@@ -115,6 +120,7 @@ impl GooseAcpAgent {
             .await
             .internal_err()?;
         self.sessions.lock().await.remove(&req.session_id);
+        self.publish_session_removed(&req.session_id).await;
         Ok(EmptyResponse {})
     }
 
@@ -128,6 +134,7 @@ impl GooseAcpAgent {
             .apply()
             .await
             .internal_err()?;
+        self.publish_session_updated(&req.session_id).await;
         Ok(EmptyResponse {})
     }
 }

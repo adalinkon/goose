@@ -3,7 +3,11 @@ import type {
   LoadSessionResponse,
 } from "@agentclientprotocol/sdk";
 import * as directAcp from "./acpApi";
-import type { AcpSessionInfo } from "./acpApi";
+import type {
+  AcpSessionInfo,
+  ListSessionsOptions,
+  SessionRuntimeSnapshot,
+} from "./acpApi";
 import * as sessionRegistry from "./acpSessionRegistry";
 import {
   getCatalogEntry,
@@ -171,6 +175,7 @@ export async function acpSetModel(
 }
 
 export type { AcpSessionInfo };
+export type { SessionRuntimeSnapshot };
 
 export interface AcpSessionSearchResult {
   sessionId: string;
@@ -181,8 +186,10 @@ export interface AcpSessionSearchResult {
 }
 
 /** List all sessions known to the goose binary. */
-export async function acpListSessions(): Promise<AcpSessionInfo[]> {
-  return directAcp.listSessions();
+export async function acpListSessions(
+  options: ListSessionsOptions = {},
+): Promise<AcpSessionInfo[]> {
+  return directAcp.listSessions(options);
 }
 
 export async function acpSearchSessions(
@@ -226,6 +233,19 @@ export async function acpLoadSession(
     rollbackSessionRegistration();
     throw error;
   }
+}
+
+export async function acpAttachSessionRuntime(
+  sessionId: string,
+  lastSeq?: number,
+): Promise<void> {
+  await directAcp.attachSessionRuntime(sessionId, lastSeq);
+}
+
+export async function acpDetachSessionRuntime(
+  sessionId: string,
+): Promise<void> {
+  await directAcp.detachSessionRuntime(sessionId);
 }
 
 /** Export a session as JSON via the goose binary. */

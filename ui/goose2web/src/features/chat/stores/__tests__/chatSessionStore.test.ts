@@ -20,6 +20,7 @@ vi.mock("@/shared/api/acpApi", () => ({
 function resetStore() {
   useChatSessionStore.setState({
     sessions: [],
+    sessionRuntimeById: {},
     activeSessionId: null,
     isLoading: false,
     hasHydratedSessions: false,
@@ -103,6 +104,8 @@ describe("chatSessionStore", () => {
           workingDir: "/tmp/acp-1",
           providerId: "openai",
           modelId: "gpt-4.1",
+          runtimeStatus: "running",
+          sessionIndexRevision: 4,
         },
         {
           sessionId: "acp-2",
@@ -114,11 +117,16 @@ describe("chatSessionStore", () => {
           messageCount: 7,
           providerId: null,
           modelId: null,
+          runtimeStatus: "idle",
+          sessionIndexRevision: 3,
         },
       ]);
 
       await useChatSessionStore.getState().loadSessions();
 
+      expect(mockAcpListSessions).toHaveBeenCalledWith({
+        includeArchived: false,
+      });
       const sessions = useChatSessionStore.getState().sessions;
       expect(sessions).toHaveLength(2);
       expect(sessions[0].id).toBe("acp-2");
@@ -130,6 +138,41 @@ describe("chatSessionStore", () => {
       expect(sessions[1].providerId).toBe("openai");
       expect(sessions[1].modelId).toBe("gpt-4.1");
       expect(sessions[1].workingDir).toBe("/tmp/acp-1");
+      expect(useChatSessionStore.getState().sessionRuntimeById).toMatchObject({
+        "acp-1": { status: "running", revision: 4 },
+        "acp-2": { status: "idle", revision: 3 },
+      });
+    });
+
+    it("does not let stale list runtime overwrite a newer update", async () => {
+      useChatSessionStore
+        .getState()
+        .applySessionRuntime("acp-1", "wait", 9, "2026-04-03");
+      mockAcpListSessions.mockResolvedValue([
+        {
+          sessionId: "acp-1",
+          title: "ACP Session 1",
+          updatedAt: "2026-04-01",
+          createdAt: "2026-03-31",
+          archivedAt: null,
+          userSetName: false,
+          messageCount: 4,
+          providerId: null,
+          modelId: null,
+          runtimeStatus: "idle",
+          sessionIndexRevision: 8,
+        },
+      ]);
+
+      await useChatSessionStore.getState().loadSessions();
+
+      expect(
+        useChatSessionStore.getState().sessionRuntimeById["acp-1"],
+      ).toEqual({
+        status: "wait",
+        revision: 9,
+        updatedAt: "2026-04-03",
+      });
     });
 
     it("reads all metadata fields from backend response", async () => {
@@ -180,6 +223,7 @@ describe("chatSessionStore", () => {
           archivedAt: null,
           userSetName: false,
           messageCount: 1,
+          workingDir: "/tmp/older",
           providerId: null,
           modelId: null,
         },
@@ -249,6 +293,24 @@ describe("chatSessionStore", () => {
 
       const updated = useChatSessionStore.getState().getSession(session.id);
       expect(updated?.updatedAt).toBe(newTimestamp);
+    });
+  });
+
+  describe("applySessionRuntime", () => {
+    it("keeps the newest runtime revision", () => {
+      const store = useChatSessionStore.getState();
+
+      store.applySessionRuntime("session-1", "running", 2);
+      store.applySessionRuntime("session-1", "idle", 1);
+      store.applySessionRuntime("session-1", "wait", 3);
+
+      expect(
+        useChatSessionStore.getState().sessionRuntimeById["session-1"],
+      ).toEqual({
+        status: "wait",
+        revision: 3,
+        updatedAt: undefined,
+      });
     });
   });
 

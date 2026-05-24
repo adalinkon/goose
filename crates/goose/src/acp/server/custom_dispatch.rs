@@ -3,6 +3,33 @@ use goose_acp_macros::custom_methods;
 
 #[custom_methods]
 impl GooseAcpAgent {
+    pub async fn dispatch_custom_request_with_context(
+        &self,
+        cx: &ConnectionTo<Client>,
+        connection_id: &str,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, agent_client_protocol::Error> {
+        match method {
+            "_goose/session/runtime/attach" => {
+                let req: AttachSessionRuntimeRequest =
+                    serde_json::from_value(params).invalid_params_err()?;
+                serde_json::to_value(
+                    self.on_attach_session_runtime(cx, connection_id, req)
+                        .await?,
+                )
+                .internal_err()
+            }
+            "_goose/session/runtime/detach" => {
+                let req: DetachSessionRuntimeRequest =
+                    serde_json::from_value(params).invalid_params_err()?;
+                self.on_detach_session_runtime(connection_id, req).await?;
+                serde_json::to_value(EmptyResponse {}).internal_err()
+            }
+            _ => self.dispatch_custom_request(method, params).await,
+        }
+    }
+
     pub async fn dispatch_custom_request(
         &self,
         method: &str,
@@ -49,6 +76,24 @@ impl GooseAcpAgent {
         req: ReadResourceRequest,
     ) -> Result<ReadResourceResponse, agent_client_protocol::Error> {
         self.on_read_resource(req).await
+    }
+
+    #[custom_method(AttachSessionRuntimeRequest)]
+    async fn dispatch_attach_session_runtime_schema(
+        &self,
+        _req: AttachSessionRuntimeRequest,
+    ) -> Result<AttachSessionRuntimeResponse, agent_client_protocol::Error> {
+        Err(agent_client_protocol::Error::internal_error()
+            .data("attachSessionRuntime requires connection context"))
+    }
+
+    #[custom_method(DetachSessionRuntimeRequest)]
+    async fn dispatch_detach_session_runtime_schema(
+        &self,
+        _req: DetachSessionRuntimeRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        Err(agent_client_protocol::Error::internal_error()
+            .data("detachSessionRuntime requires connection context"))
     }
 
     #[custom_method(UpdateWorkingDirRequest)]

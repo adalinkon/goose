@@ -88,11 +88,37 @@ describe("SidebarChatRow", () => {
         id="session-1"
         title="Busy Chat"
         isActive={false}
-        isRunning
+        runtimeStatus="running"
       />,
     );
 
     expect(screen.getByLabelText(/chat active/i)).toBeInTheDocument();
+  });
+
+  it("shows a waiting dot when the chat is waiting", () => {
+    render(
+      <SidebarChatRow
+        id="session-1"
+        title="Waiting Chat"
+        isActive={false}
+        runtimeStatus="wait"
+      />,
+    );
+
+    expect(screen.getByLabelText(/chat waiting/i)).toBeInTheDocument();
+  });
+
+  it("shows an unavailable dot when the chat runtime is dead", () => {
+    render(
+      <SidebarChatRow
+        id="session-1"
+        title="Unavailable Chat"
+        isActive={false}
+        runtimeStatus="dead"
+      />,
+    );
+
+    expect(screen.getByLabelText(/chat unavailable/i)).toBeInTheDocument();
   });
 
   it("shows an unread dot when the chat has unread output", () => {
@@ -108,24 +134,22 @@ describe("SidebarChatRow", () => {
     expect(screen.getByLabelText(/unread messages/i)).toBeInTheDocument();
   });
 
-  it("does not reserve activity space by default when idle", () => {
-    const { container } = render(
+  it("shows an idle status dot by default", () => {
+    render(
       <SidebarChatRow id="session-1" title="Idle Chat" isActive={false} />,
     );
 
-    expect(
-      container.querySelector(".h-3.w-3.shrink-0.items-center.justify-center"),
-    ).toBeNull();
+    expect(screen.getByLabelText(/chat idle/i)).toBeInTheDocument();
   });
 
-  it("reserves activity space only once activity exists", () => {
+  it("keeps the same activity slot when activity changes", () => {
     const { container, rerender } = render(
       <SidebarChatRow id="session-1" title="Recent Chat" isActive={false} />,
     );
 
     expect(
       container.querySelector(".h-3.w-3.shrink-0.items-center.justify-center"),
-    ).toBeNull();
+    ).toBeInTheDocument();
 
     rerender(
       <SidebarChatRow

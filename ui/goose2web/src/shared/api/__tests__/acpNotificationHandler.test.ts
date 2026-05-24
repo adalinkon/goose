@@ -886,4 +886,90 @@ describe("acpNotificationHandler", () => {
       count: 4,
     });
   });
+
+  it("runtime replay merges by goose message id and ignores duplicate event ids", async () => {
+    const sessionId = "runtime-replay-session";
+    useChatStore.getState().setRuntimeView(sessionId, { phase: "ready" });
+    useChatStore.getState().setMessages(sessionId, [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        created: 1_700_000_000_000,
+        content: [{ type: "text", text: "Hello" }],
+        metadata: {
+          userVisible: true,
+          agentVisible: true,
+          completionStatus: "inProgress",
+        },
+      },
+    ]);
+
+    const notification = {
+      sessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: " world",
+        },
+      },
+      _meta: {
+        seq: 5,
+        kind: "chat.agent_chunk",
+        delivery: "replay",
+        goose: {
+          messageId: "assistant-1",
+          created: 1_700_000_000,
+          runtime: {
+            protocolVersion: 1,
+            eventId: `${sessionId}:5`,
+            seq: 5,
+            kind: "chat.agent_chunk",
+            delivery: "replay",
+            messageId: "assistant-1",
+          },
+        },
+      },
+    } as never;
+
+    await handleSessionNotification(notification);
+    await handleSessionNotification(notification);
+
+    const messages = useChatStore.getState().messagesBySession[sessionId];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toEqual([{ type: "text", text: "Hello world" }]);
+    expect(useChatStore.getState().sessionRuntimeViewById[sessionId].lastSeq).toBe(5);
+  });
+
+  it("rejects runtime replay chat events without goose message id", async () => {
+    const sessionId = "runtime-replay-missing-message";
+    useChatStore.getState().setRuntimeView(sessionId, { phase: "ready" });
+
+    await handleSessionNotification({
+      sessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "orphan",
+        },
+      },
+      _meta: {
+        seq: 6,
+        kind: "chat.agent_chunk",
+        delivery: "replay",
+        goose: {
+          runtime: {
+            protocolVersion: 1,
+            eventId: `${sessionId}:6`,
+            seq: 6,
+            kind: "chat.agent_chunk",
+            delivery: "replay",
+          },
+        },
+      },
+    } as never);
+
+    expect(useChatStore.getState().messagesBySession[sessionId]).toBeUndefined();
+  });
 });

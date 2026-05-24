@@ -21,6 +21,24 @@ describe("SessionActivityIndicator", () => {
     expect(screen.getByLabelText(/chat active/i)).toBeInTheDocument();
   });
 
+  it("renders a waiting dot for wait status", () => {
+    render(<SessionActivityIndicator status="wait" />);
+
+    expect(screen.getByLabelText(/chat waiting/i)).toBeInTheDocument();
+  });
+
+  it("renders an unavailable dot for dead status", () => {
+    render(<SessionActivityIndicator status="dead" />);
+
+    expect(screen.getByLabelText(/chat unavailable/i)).toBeInTheDocument();
+  });
+
+  it("renders an idle dot when requested", () => {
+    render(<SessionActivityIndicator showIdle />);
+
+    expect(screen.getByLabelText(/chat idle/i)).toBeInTheDocument();
+  });
+
   it("renders nothing when the session is idle and read", () => {
     const { container } = render(<SessionActivityIndicator />);
 

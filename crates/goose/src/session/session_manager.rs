@@ -293,6 +293,7 @@ struct SessionListQuery<'a> {
     cursor: Option<&'a SessionListCursor>,
     limit: Option<usize>,
     require_messages: bool,
+    include_archived: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -367,9 +368,16 @@ impl SessionManager {
         working_dir: Option<&Path>,
         cursor: Option<&SessionListCursor>,
         page_size: usize,
+        include_archived: bool,
     ) -> Result<SessionListPage> {
         self.storage
-            .list_nonempty_sessions_by_types_paged(types, working_dir, cursor, page_size)
+            .list_nonempty_sessions_by_types_paged(
+                types,
+                working_dir,
+                cursor,
+                page_size,
+                include_archived,
+            )
             .await
     }
 
@@ -1531,6 +1539,9 @@ impl SessionStorage {
                     .to_string(),
             );
         }
+        if !options.include_archived {
+            where_clauses.push("s.archived_at IS NULL".to_string());
+        }
 
         let where_clause = if where_clauses.is_empty() {
             String::new()
@@ -1611,6 +1622,7 @@ impl SessionStorage {
         working_dir: Option<&Path>,
         cursor: Option<&SessionListCursor>,
         page_size: usize,
+        include_archived: bool,
     ) -> Result<SessionListPage> {
         if types.is_empty() || page_size == 0 {
             return Ok(SessionListPage {
@@ -1626,6 +1638,7 @@ impl SessionStorage {
                 cursor,
                 limit: Some(page_size + 1),
                 require_messages: true,
+                include_archived,
             })
             .await?;
         let has_next_page = sessions.len() > page_size;
@@ -2045,6 +2058,7 @@ mod tests {
                 working_dir.map(Path::new),
                 cursor,
                 page_size,
+                true,
             )
             .await
             .unwrap();

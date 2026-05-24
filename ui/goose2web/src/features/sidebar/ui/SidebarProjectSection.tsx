@@ -7,6 +7,7 @@ import {
 } from "@tabler/icons-react";
 import type { AppView } from "@/app/AppShell";
 import type { ProjectInfo } from "@/features/projects/api/projects";
+import type { SessionIndexStatus } from "@/shared/types/chat";
 import { ProjectIcon } from "@/features/projects/ui/ProjectIcon";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
@@ -21,7 +22,7 @@ interface TabInfo {
   id: string;
   title: string;
   projectId?: string;
-  isRunning?: boolean;
+  runtimeStatus?: SessionIndexStatus;
   hasUnread?: boolean;
 }
 
@@ -171,7 +172,7 @@ export function SidebarProjectSection({
                 id={session.id}
                 title={session.title}
                 isActive={isActive}
-                isRunning={session.isRunning ?? false}
+                runtimeStatus={session.runtimeStatus ?? "idle"}
                 hasUnread={session.hasUnread ?? false}
                 nested
                 onSelect={onSelectSession}

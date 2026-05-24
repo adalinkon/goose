@@ -6,6 +6,7 @@ import {
   getEditableSessionTitle,
   isSessionTitleUnchanged,
 } from "@/features/chat/lib/sessionTitle";
+import type { SessionIndexStatus } from "@/shared/types/chat";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import {
@@ -26,7 +27,7 @@ interface SidebarChatRowProps {
   id: string;
   title: string;
   isActive: boolean;
-  isRunning?: boolean;
+  runtimeStatus?: SessionIndexStatus;
   hasUnread?: boolean;
   className?: string;
   nested?: boolean;
@@ -39,7 +40,7 @@ export function SidebarChatRow({
   id,
   title,
   isActive,
-  isRunning = false,
+  runtimeStatus = "idle",
   hasUnread = false,
   className,
   nested = false,
@@ -61,7 +62,6 @@ export function SidebarChatRow({
     t("common:session.defaultTitle"),
   );
   const [draftTitle, setDraftTitle] = useState(editableTitle);
-  const showActivityIndicator = isRunning || hasUnread;
 
   useEffect(() => {
     setDraftTitle(editableTitle);
@@ -170,11 +170,12 @@ export function SidebarChatRow({
           isActive ? ACTIVE_CHAT_ROW_CLASS : INACTIVE_CHAT_ROW_CLASS,
         )}
       >
-        {showActivityIndicator && !nested && (
+        {!nested && (
           <span className="flex h-3 w-3 shrink-0 items-center justify-center">
             <SessionActivityIndicator
-              isRunning={isRunning}
+              status={runtimeStatus}
               hasUnread={hasUnread}
+              showIdle
             />
           </span>
         )}
@@ -182,10 +183,11 @@ export function SidebarChatRow({
           {displayTitle}
         </span>
       </Button>
-      {showActivityIndicator && nested && (
+      {nested && (
         <SessionActivityIndicator
-          isRunning={isRunning}
+          status={runtimeStatus}
           hasUnread={hasUnread}
+          showIdle
           variant="overlay"
           className="left-4 right-auto top-1/2 -translate-y-1/2"
         />

@@ -8,13 +8,8 @@ import { Button } from "@/shared/ui/button";
 import { SessionCard } from "./SessionCard";
 import { groupSessionsByDate } from "../lib/groupSessionsByDate";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
-import {
-  getVisibleSessionsByMessageCount,
-  useChatSessionStore,
-} from "@/features/chat/stores/chatSessionStore";
+import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import { selectSessions } from "@/features/chat/stores/chatSessionSelectors";
-import { useChatStore } from "@/features/chat/stores/chatStore";
-import { selectSessionMessageCountById } from "@/features/chat/stores/chatSelectors";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { selectProjects } from "@/features/projects/stores/projectSelectors";
 import {
@@ -44,15 +39,10 @@ export function SessionHistoryView({
 }: SessionHistoryViewProps) {
   const { t, i18n } = useTranslation(["sessions", "common"]);
   const sessions = useChatSessionStore(selectSessions);
-  const sessionMessageCountById = useChatStore(selectSessionMessageCountById);
   const loadSessions = useChatSessionStore((s) => s.loadSessions);
   const activeSessions = useMemo(
-    () =>
-      getVisibleSessionsByMessageCount(
-        sessions,
-        sessionMessageCountById,
-      ).filter((session) => !session.archivedAt),
-    [sessionMessageCountById, sessions],
+    () => sessions.filter((session) => !session.archivedAt),
+    [sessions],
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 

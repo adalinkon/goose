@@ -174,7 +174,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     null,
   );
   const loadSessionMessages = useCallback((sessionId: string) => {
-    return sessionRuntimeCoordinator.ensureSessionLoaded(sessionId);
+    return sessionRuntimeCoordinator.ensureSessionAttached(sessionId);
   }, []);
 
   useEffect(() => {
@@ -187,7 +187,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
         activeView,
       });
       useChatStore.getState().markSessionRead(activeSessionId);
-      void sessionRuntimeCoordinator.ensureSessionLoaded(activeSessionId);
+      void sessionRuntimeCoordinator.ensureSessionAttached(activeSessionId);
       return;
     }
     sessionRuntimeCoordinator.setActiveView(activeView);
@@ -508,9 +508,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
     navigate(lastNonSettingsPathRef.current || "/", { replace: true });
   }, [navigate]);
 
-  const selectSettingsSection = useCallback((section: SectionId) => {
-    navigate(getSettingsPath(section), { replace: true });
-  }, [navigate]);
+  const selectSettingsSection = useCallback(
+    (section: SectionId) => {
+      navigate(getSettingsPath(section), { replace: true });
+    },
+    [navigate],
+  );
 
   useEffect(() => {
     const handleOpenSettingsEvent = (event: Event) => {
@@ -713,11 +716,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
   ]);
 
   useEffect(() => {
-    if (
-      activeView !== "chat" &&
-      activeView !== "settings" &&
-      activeSessionId
-    ) {
+    if (activeView !== "chat" && activeView !== "settings" && activeSessionId) {
       setActiveSession(null);
     }
   }, [activeSessionId, activeView, setActiveSession]);

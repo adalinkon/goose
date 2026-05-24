@@ -48,8 +48,12 @@ pub(crate) async fn handle_ws_upgrade(
     response
 }
 
-fn extract_session_id(text: &str) -> Option<String> {
+fn extract_legacy_runtime_session_id(text: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let method = value.get("method").and_then(|method| method.as_str())?;
+    if !matches!(method, "session/new" | "session/load" | "session/prompt") {
+        return None;
+    }
     value
         .get("params")
         .and_then(|params| params.get("sessionId"))
@@ -85,7 +89,7 @@ async fn run_ws(
                 match msg_result {
                     Some(Ok(Message::Text(text))) => {
                         let text_str = text.to_string();
-                        if let Some(session_id) = extract_session_id(&text_str) {
+                        if let Some(session_id) = extract_legacy_runtime_session_id(&text_str) {
                             connection
                                 .agent
                                 .attach_client(&session_id, connection_id.clone())
@@ -137,5 +141,26 @@ async fn run_ws(
     if let Some(conn) = registry.remove(&connection_id).await {
         conn.agent.detach_client(&connection_id).await;
         conn.shutdown().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_legacy_runtime_session_id;
+
+    #[test]
+    fn only_legacy_runtime_requests_attach_client_membership() {
+        assert_eq!(
+            extract_legacy_runtime_session_id(
+                r#"{"method":"session/load","params":{"sessionId":"s1"}}"#
+            ),
+            Some("s1".to_string())
+        );
+        assert_eq!(
+            extract_legacy_runtime_session_id(
+                r#"{"method":"_goose/session/rename","params":{"sessionId":"s1"}}"#
+            ),
+            None
+        );
     }
 }

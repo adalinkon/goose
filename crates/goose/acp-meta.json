@@ -26,6 +26,16 @@
       "responseType": "ReadResourceResponse"
     },
     {
+      "method": "_goose/session/runtime/attach",
+      "requestType": "AttachSessionRuntimeRequest",
+      "responseType": "AttachSessionRuntimeResponse"
+    },
+    {
+      "method": "_goose/session/runtime/detach",
+      "requestType": "DetachSessionRuntimeRequest",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_goose/working_dir/update",
       "requestType": "UpdateWorkingDirRequest",
       "responseType": "EmptyResponse"

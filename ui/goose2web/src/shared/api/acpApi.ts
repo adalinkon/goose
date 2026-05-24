@@ -6,6 +6,7 @@ import type {
   SessionInfo,
 } from "@agentclientprotocol/sdk";
 import type { ProviderInventoryEntryDto } from "@aaif/goose-sdk";
+import type { SessionIndexStatus } from "@/shared/types/chat";
 import { getClient } from "./acpConnection";
 import { perfLog } from "@/shared/lib/perfLog";
 
@@ -26,6 +27,17 @@ export interface AcpSessionInfo {
   projectId?: string | null;
   providerId: string | null;
   modelId: string | null;
+  runtimeStatus?: SessionIndexStatus;
+  sessionIndexRevision?: number;
+}
+
+export interface ListSessionsOptions {
+  includeArchived?: boolean;
+}
+
+export interface SessionRuntimeSnapshot {
+  activeRequestId: string | null;
+  lastSeq: number | null;
 }
 
 export const DEPRECATED_PROVIDER_IDS = new Set([
@@ -67,9 +79,17 @@ export async function listProviders(): Promise<AcpProvider[]> {
   return buildProviderListFromEntries(result.entries);
 }
 
-export async function listSessions(): Promise<AcpSessionInfo[]> {
+export async function listSessions(
+  options: ListSessionsOptions = {},
+): Promise<AcpSessionInfo[]> {
   const client = await getClient();
-  const response = await client.listSessions({});
+  const response = await client.listSessions({
+    _meta: {
+      goose: {
+        includeArchived: options.includeArchived === true,
+      },
+    },
+  });
   return response.sessions.map((info: SessionInfo) => ({
     sessionId: info.sessionId,
     title: info.title ?? null,
@@ -82,6 +102,8 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
     projectId: (info._meta?.projectId as string) ?? null,
     providerId: (info._meta?.providerId as string) ?? null,
     modelId: (info._meta?.modelId as string) ?? null,
+    runtimeStatus: parseSessionIndexStatus(info._meta?.runtime),
+    sessionIndexRevision: parseRevision(info._meta?.sessionIndexRevision),
   }));
 }
 
@@ -250,6 +272,25 @@ export async function loadSession(
   return response;
 }
 
+export async function attachSessionRuntime(
+  sessionId: string,
+  lastSeq?: number,
+): Promise<SessionRuntimeSnapshot | null> {
+  const client = await getClient();
+  const response = await client.extMethod("_goose/session/runtime/attach", {
+    sessionId,
+    ...(lastSeq !== undefined ? { lastSeq } : {}),
+  });
+  const snapshot = isRecord(response.snapshot) ? response.snapshot : null;
+  if (!snapshot) return null;
+  return parseRuntimeSnapshot(snapshot);
+}
+
+export async function detachSessionRuntime(sessionId: string): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/runtime/detach", { sessionId });
+}
+
 export async function prompt(
   sessionId: string,
   content: ContentBlock[],
@@ -257,4 +298,40 @@ export async function prompt(
 ): Promise<PromptResponse> {
   const client = await getClient();
   return client.prompt({ sessionId, prompt: content, _meta: meta });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseRevision(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function parseSessionIndexStatus(
+  value: unknown,
+): SessionIndexStatus | undefined {
+  if (!isRecord(value)) return undefined;
+  const status = value.status;
+  if (
+    status === "idle" ||
+    status === "running" ||
+    status === "wait" ||
+    status === "dead"
+  ) {
+    return status;
+  }
+  return undefined;
+}
+
+function parseRuntimeSnapshot(
+  value: Record<string, unknown>,
+): SessionRuntimeSnapshot {
+  return {
+    activeRequestId:
+      typeof value.activeRequestId === "string" ? value.activeRequestId : null,
+    lastSeq: typeof value.lastSeq === "number" ? value.lastSeq : null,
+  };
 }

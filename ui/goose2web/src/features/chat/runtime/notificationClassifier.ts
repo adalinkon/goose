@@ -14,6 +14,10 @@ export function classifyNotification(
     return "runtime-snapshot";
   }
 
+  if (meta.delivery === "replay") {
+    return "runtime-replay";
+  }
+
   if (meta.seq !== undefined || meta.kind || meta.delivery) {
     return phase === "hydrating" ? "runtime-replay" : "live";
   }

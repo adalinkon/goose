@@ -140,7 +140,14 @@ pub async fn serve_agent_in_process(
     let (server_read, client_write) = tokio::io::duplex(64 * 1024);
 
     let handle = tokio::spawn(async move {
-        if let Err(e) = serve(agent, server_read.compat(), server_write.compat_write()).await {
+        if let Err(e) = serve(
+            agent,
+            uuid::Uuid::new_v4().to_string(),
+            server_read.compat(),
+            server_write.compat_write(),
+        )
+        .await
+        {
             tracing::error!("ACP server error: {e}");
         }
     });

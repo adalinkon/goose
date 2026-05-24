@@ -111,6 +111,7 @@ impl ConnectionRegistry {
         let write_stream = SenderToAsyncWrite::new(from_agent_tx);
         let fut = crate::acp::server::serve(
             agent.clone(),
+            connection_id.clone(),
             read_stream.compat(),
             write_stream.compat_write(),
         );

@@ -5,12 +5,17 @@ import { forceSessionFlush, scheduleSessionFlush } from "./flushScheduler";
 import { getNotificationMeta } from "./metadata";
 import {
   clearSessionRuntimeBuffers,
+  consumeDeferredRuntimeReplay,
   consumeLiveBuffer,
+  deferRuntimeReplay,
   getLiveBuffer,
   hasProcessedSeq,
+  hasProcessedRuntimeEventId,
   markProcessedSeq,
+  markProcessedRuntimeEventId,
 } from "./sessionBuffers";
 import {
+  applyRuntimeReplayUpdate,
   applyHistoryReplayUpdate,
   completeStreamingMessage,
   flushLiveBufferToStore,
@@ -20,15 +25,31 @@ import { hydrateSession } from "./sessionHydrator";
 import { trackReplayNotification } from "./replayPerf";
 import { trackLiveAgentChunk } from "./streamTracking";
 import type {
+  RuntimeNotificationMeta,
   RuntimeSessionNotification,
   RuntimeSnapshot,
   SessionRuntimeView,
 } from "./types";
+import {
+  getAcpConnectionGeneration,
+  onAcpConnectionReady,
+} from "@/shared/api/acpConnection";
+import { acpDetachSessionRuntime } from "@/shared/api/acp";
 
 class SessionRuntimeCoordinator {
   private activeSessionId: string | null = null;
   private activeView: string | null = null;
-  private loadPromises = new Map<string, Promise<void>>();
+  private loadPromises = new Map<
+    string,
+    { generation: number; promise: Promise<void> }
+  >();
+  private sessionAttachedGeneration = new Map<string, number>();
+
+  constructor() {
+    onAcpConnectionReady((generation) => {
+      void this.attachActiveSessionsToCurrentConnection(generation);
+    });
+  }
 
   activateSession(sessionId: string, options?: { activeView?: string }): void {
     if (this.activeSessionId && this.activeSessionId !== sessionId) {
@@ -49,6 +70,10 @@ class SessionRuntimeCoordinator {
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = null;
     }
+    this.sessionAttachedGeneration.delete(sessionId);
+    void acpDetachSessionRuntime(sessionId).catch((error: unknown) => {
+      console.warn("[runtime] failed to detach session runtime", error);
+    });
   }
 
   setActiveView(activeView: string): void {
@@ -60,38 +85,58 @@ class SessionRuntimeCoordinator {
     });
   }
 
-  ensureSessionLoaded(sessionId: string): Promise<void> {
+  ensureSessionAttached(sessionId: string): Promise<void> {
     const currentView =
       useChatStore.getState().sessionRuntimeViewById[sessionId];
-    if (
-      currentView?.phase === "ready" ||
-      currentView?.phase === "attached-runtime"
-    ) {
+    const targetGeneration = getAcpConnectionGeneration();
+    if (this.isSessionAttachedToGeneration(sessionId, targetGeneration)) {
       this.flushSession(sessionId);
       return Promise.resolve();
     }
 
     const existing = this.loadPromises.get(sessionId);
-    if (existing) return existing;
+    if (existing?.generation === targetGeneration) return existing.promise;
 
     const lastSeq = currentView?.lastSeq ?? 0;
     const promise = hydrateSession(sessionId, {
       lastSeq,
-      onRuntimeSnapshot: (snapshot) => this.applyRuntimeSnapshot(snapshot),
+      shouldApply: () => this.isCurrentGeneration(targetGeneration),
+      onRuntimeSnapshot: (snapshot) => {
+        if (this.isCurrentGeneration(targetGeneration)) {
+          this.applyRuntimeSnapshot(snapshot);
+        }
+      },
       onHistoryReady: () => {
+        if (!this.isCurrentGeneration(targetGeneration)) {
+          return;
+        }
         this.flushSession(sessionId);
+        this.flushDeferredRuntimeReplay(sessionId);
         const runtimeView =
           useChatStore.getState().sessionRuntimeViewById[sessionId];
         useChatStore.getState().setRuntimeView(sessionId, {
           phase: runtimeView?.activeRequestId ? "attached-runtime" : "ready",
         });
+        this.sessionAttachedGeneration.set(sessionId, targetGeneration);
       },
-      onFailed: () => clearSessionRuntimeBuffers(sessionId),
-    }).then(() => {
-      this.loadPromises.delete(sessionId);
-    });
-    this.loadPromises.set(sessionId, promise);
+      onFailed: () => {
+        if (this.isCurrentGeneration(targetGeneration)) {
+          clearSessionRuntimeBuffers(sessionId);
+        }
+      },
+    })
+      .then(() => undefined)
+      .finally(() => {
+        if (this.loadPromises.get(sessionId)?.promise === promise) {
+          this.loadPromises.delete(sessionId);
+        }
+      });
+    this.loadPromises.set(sessionId, { generation: targetGeneration, promise });
     return promise;
+  }
+
+  ensureSessionLoaded(sessionId: string): Promise<void> {
+    return this.ensureSessionAttached(sessionId);
   }
 
   enqueueNotification(notification: RuntimeSessionNotification): void {
@@ -102,6 +147,18 @@ class SessionRuntimeCoordinator {
     if (meta.seq !== undefined) {
       if (hasProcessedSeq(sessionId, meta.seq)) return;
       markProcessedSeq(sessionId, meta.seq);
+      const current =
+        useChatStore.getState().sessionRuntimeViewById[sessionId]?.lastSeq ?? 0;
+      if (meta.seq > current) {
+        useChatStore
+          .getState()
+          .setRuntimeView(sessionId, { lastSeq: meta.seq });
+      }
+    }
+
+    if (meta.protocolViolation) {
+      console.error(`[runtime-replay] ${meta.protocolViolation}`, notification);
+      return;
     }
 
     if (classification === "runtime-snapshot" && meta.runtime) {
@@ -122,6 +179,11 @@ class SessionRuntimeCoordinator {
     if (classification === "history-replay") {
       this.trackReplayPerf(sessionId);
       applyHistoryReplayUpdate(sessionId, notification.update);
+      return;
+    }
+
+    if (classification === "runtime-replay") {
+      this.enqueueRuntimeReplay(sessionId, notification, meta);
       return;
     }
 
@@ -174,6 +236,112 @@ class SessionRuntimeCoordinator {
     } else {
       store.markSessionUnread(sessionId);
     }
+  }
+
+  private enqueueRuntimeReplay(
+    sessionId: string,
+    notification: RuntimeSessionNotification,
+    meta: RuntimeNotificationMeta,
+  ): void {
+    const eventId = meta.runtimeEvent?.eventId;
+    if (eventId) {
+      if (hasProcessedRuntimeEventId(sessionId, eventId)) return;
+      markProcessedRuntimeEventId(sessionId, eventId);
+    }
+
+    const requiresMessageId = new Set([
+      "agent_message_chunk",
+      "agent_thought_chunk",
+      "tool_call",
+      "tool_call_update",
+    ]).has(notification.update.sessionUpdate);
+    if (requiresMessageId && !meta.messageId && !meta.runtimeEvent?.messageId) {
+      console.error(
+        "[runtime-replay] missing goose.messageId for chat runtime event",
+        notification,
+      );
+      return;
+    }
+
+    const phase =
+      useChatStore.getState().sessionRuntimeViewById[sessionId]?.phase ??
+      "idle";
+    const messageId = meta.messageId ?? meta.runtimeEvent?.messageId;
+    const hasTarget = messageId
+      ? Boolean(
+          useChatStore
+            .getState()
+            .messagesBySession[sessionId]?.some(
+              (message) => message.id === messageId,
+            ),
+        )
+      : true;
+
+    if (phase === "hydrating" && requiresMessageId && !hasTarget) {
+      deferRuntimeReplay(sessionId, notification, meta);
+      return;
+    }
+
+    if (!applyRuntimeReplayUpdate(sessionId, notification.update, meta)) {
+      console.error("[runtime-replay] rejected runtime event", notification);
+    }
+  }
+
+  private flushDeferredRuntimeReplay(sessionId: string): void {
+    const deferred = consumeDeferredRuntimeReplay(sessionId);
+    for (const item of deferred) {
+      if (
+        !applyRuntimeReplayUpdate(
+          sessionId,
+          item.notification.update,
+          item.meta,
+        )
+      ) {
+        console.error(
+          "[runtime-replay] rejected deferred runtime event",
+          item.notification,
+        );
+      }
+    }
+  }
+
+  private async attachActiveSessionsToCurrentConnection(
+    generation: number,
+  ): Promise<void> {
+    const store = useChatStore.getState();
+    const sessions = Object.entries(store.sessionRuntimeViewById)
+      .filter(
+        ([sessionId, view]) =>
+          view.isVisible ||
+          sessionId === this.activeSessionId ||
+          sessionId === store.activeSessionId,
+      )
+      .map(([sessionId]) => sessionId);
+
+    for (const sessionId of sessions) {
+      if (!this.isCurrentGeneration(generation)) {
+        return;
+      }
+      await this.ensureSessionAttached(sessionId);
+    }
+  }
+
+  private isSessionAttachedToGeneration(
+    sessionId: string,
+    generation: number,
+  ): boolean {
+    const currentView =
+      useChatStore.getState().sessionRuntimeViewById[sessionId];
+    const attachedGeneration = this.sessionAttachedGeneration.get(sessionId);
+    return (
+      (currentView?.phase === "ready" ||
+        currentView?.phase === "attached-runtime") &&
+      attachedGeneration === generation
+    );
+  }
+
+  private isCurrentGeneration(generation: number): boolean {
+    return getAcpConnectionGeneration() === generation;
   }
 
   private applyRuntimeSnapshot(snapshot: RuntimeSnapshot): void {

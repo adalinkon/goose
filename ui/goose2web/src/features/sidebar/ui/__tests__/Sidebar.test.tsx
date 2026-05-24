@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "../Sidebar";
 
 const mockSessions: Array<{
@@ -18,12 +18,11 @@ vi.mock("@/features/chat/stores/chatStore", () => ({
       messagesBySession: {},
       sessionStateById: {},
       sessionMessageCountById: {},
+      sessionRuntimeViewById: {},
     }),
 }));
 
 vi.mock("@/features/chat/stores/chatSessionStore", () => ({
-  getVisibleSessions: (sessions: typeof mockSessions) =>
-    sessions.filter((session) => session.messageCount > 0),
   getVisibleSessionsByMessageCount: (
     sessions: typeof mockSessions,
     sessionMessageCountById: Record<string, number>,
@@ -36,6 +35,7 @@ vi.mock("@/features/chat/stores/chatSessionStore", () => ({
   useChatSessionStore: (selector: (state: unknown) => unknown) =>
     selector({
       sessions: mockSessions,
+      sessionRuntimeById: {},
     }),
 }));
 
@@ -54,6 +54,10 @@ vi.mock("@/features/projects/stores/projectStore", () => ({
 }));
 
 describe("Sidebar", () => {
+  afterEach(() => {
+    mockSessions.splice(0, mockSessions.length);
+  });
+
   it("shows sessions in recents when their project is not loaded", () => {
     mockSessions.splice(0, mockSessions.length, {
       id: "session-1",
@@ -74,19 +78,39 @@ describe("Sidebar", () => {
     );
 
     expect(screen.getByText("Recovered Session")).toBeInTheDocument();
-
-    mockSessions.splice(0, mockSessions.length);
   });
 
-  it("hides zero-message sessions from recents", () => {
+  it("shows non-archived sessions even when message count has not synced", () => {
+    mockSessions.splice(0, mockSessions.length, {
+      id: "session-zero",
+      title: "Fresh Session",
+      updatedAt: "2026-04-09T12:01:00.000Z",
+      messageCount: 0,
+    });
+
+    render(
+      <Sidebar
+        collapsed={false}
+        onCollapse={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectSession={vi.fn()}
+        projects={[]}
+      />,
+    );
+
+    expect(screen.getByText("Fresh Session")).toBeInTheDocument();
+  });
+
+  it("hides archived sessions from recents", () => {
     mockSessions.splice(
       0,
       mockSessions.length,
       {
         id: "home-session",
-        title: "New Chat",
+        title: "Archived Chat",
         updatedAt: "2026-04-09T12:00:00.000Z",
         messageCount: 0,
+        archivedAt: "2026-04-09T12:02:00.000Z",
       },
       {
         id: "session-1",
@@ -106,10 +130,8 @@ describe("Sidebar", () => {
       />,
     );
 
-    expect(screen.queryByText("New Chat")).not.toBeInTheDocument();
+    expect(screen.queryByText("Archived Chat")).not.toBeInTheDocument();
     expect(screen.getByText("Recovered Session")).toBeInTheDocument();
-
-    mockSessions.splice(0, mockSessions.length);
   });
 
   it("renders a home button in the sidebar header and navigates home", async () => {
