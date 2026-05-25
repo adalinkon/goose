@@ -13,6 +13,7 @@ import {
   type ExtensionFilter,
 } from "../lib/extensionCategories";
 import type { ExtensionEntry } from "../types";
+import { ExtensionDetailDialog } from "./ExtensionDetailDialog";
 import { ExtensionItem } from "./ExtensionItem";
 import { ExtensionModal } from "./ExtensionModal";
 
@@ -44,11 +45,17 @@ export function ExtensionsSettings() {
     isLoading,
     modalMode,
     editingExtension,
+    detailExtension,
     handleAdd,
     handleConfigure,
+    handleShowDetails,
     handleSubmit,
     handleDelete,
+    handleToggle,
+    handleUpdateTools,
     handleModalClose,
+    handleDetailClose,
+    togglingKeys,
   } = useExtensionsSettings();
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState<ExtensionFilter>("all");
@@ -103,7 +110,10 @@ export function ExtensionsSettings() {
             <ExtensionItem
               key={ext.config_key}
               extension={ext}
+              onDetails={handleShowDetails}
               onConfigure={handleConfigure}
+              onToggle={handleToggle}
+              isToggling={togglingKeys.has(ext.config_key)}
             />
           ))}
         </div>
@@ -226,6 +236,14 @@ export function ExtensionsSettings() {
           onClose={handleModalClose}
         />
       )}
+
+      {detailExtension ? (
+        <ExtensionDetailDialog
+          extension={detailExtension}
+          onClose={handleDetailClose}
+          onSaveTools={handleUpdateTools}
+        />
+      ) : null}
     </>
   );
 }

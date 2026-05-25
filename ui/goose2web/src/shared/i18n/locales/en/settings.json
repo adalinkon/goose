@@ -97,6 +97,8 @@
     "addExtension": "Add extension",
     "editExtension": "Edit Extension",
     "deleteExtension": "Delete Extension",
+    "enableExtension": "Enable {{name}}",
+    "disableExtension": "Disable {{name}}",
     "deleteConfirmation": {
       "title": "Delete \"{{name}}\" permanently?",
       "description": "This will permanently remove this extension and all of its settings.",
@@ -105,7 +107,17 @@
     },
     "configure": "Configure {{name}}",
     "save": "Save",
+    "saving": "Saving...",
     "cancel": "Cancel",
+    "details": {
+      "noDescription": "No description provided.",
+      "toolsTitle": "Tools",
+      "toolsDescription": "Choose which tools this extension can expose. Empty means Goose will not restrict tools when no tool inventory is available.",
+      "enableAllTools": "Enable all",
+      "disableAllTools": "Disable all",
+      "toggleTool": "Toggle {{name}}",
+      "noTools": "No tool inventory is available for this extension yet. Start a session with the extension enabled to discover runtime tools."
+    },
     "fields": {
       "name": "Name",
       "namePlaceholder": "my-extension",
@@ -146,6 +158,7 @@
     "errors": {
       "saveFailed": "Failed to save extension. Please try again.",
       "deleteFailed": "Failed to delete extension. Please try again.",
+      "toggleFailed": "Failed to update extension status. Please try again.",
       "nameConflict": "An extension named \"{{name}}\" already exists."
     }
   },

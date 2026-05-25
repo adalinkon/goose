@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   addExtension: vi.fn(),
   listExtensions: vi.fn(),
   removeExtension: vi.fn(),
+  toggleExtension: vi.fn(),
   toastError: vi.fn(),
 }));
 
@@ -14,6 +15,7 @@ vi.mock("../../api/extensions", () => ({
   addExtension: mocks.addExtension,
   listExtensions: mocks.listExtensions,
   removeExtension: mocks.removeExtension,
+  toggleExtension: mocks.toggleExtension,
 }));
 
 vi.mock("react-i18next", () => ({
@@ -40,6 +42,7 @@ describe("useExtensionsSettings", () => {
     mocks.listExtensions.mockResolvedValue([enabledExtension]);
     mocks.addExtension.mockResolvedValue(undefined);
     mocks.removeExtension.mockResolvedValue(undefined);
+    mocks.toggleExtension.mockResolvedValue(undefined);
   });
 
   it("preserves an edited extension's enabled flag", async () => {
@@ -117,5 +120,39 @@ describe("useExtensionsSettings", () => {
     expect(mocks.toastError).toHaveBeenCalledWith(
       "extensions.errors.saveFailed",
     );
+  });
+
+  it("toggles extension status through the config API", async () => {
+    const { result } = renderHook(() => useExtensionsSettings());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.handleToggle(enabledExtension, false);
+    });
+
+    expect(mocks.toggleExtension).toHaveBeenCalledWith("github", false);
+    expect(mocks.listExtensions).toHaveBeenCalledTimes(1);
+    expect(result.current.extensions[0]?.enabled).toBe(false);
+  });
+
+  it("updates available tools through extension config save", async () => {
+    const { result } = renderHook(() => useExtensionsSettings());
+    const nextConfig = {
+      ...enabledExtension,
+      available_tools: ["search_issues"],
+    };
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.handleUpdateTools(enabledExtension, nextConfig);
+    });
+
+    expect(mocks.addExtension).toHaveBeenCalledWith("github", nextConfig, true);
   });
 });
