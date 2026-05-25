@@ -1,0 +1,139 @@
+# Derive a stable port from the working directory so the same worktree
+# always gets the same port.
+vite_port := `python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)"`
+
+# Default recipe
+default:
+    @just --list
+
+# Install dependencies and build the generated SDK package.
+setup:
+    cd ../ && pnpm install
+    cd ../sdk && pnpm build
+
+# Run lint, i18n checks, and type checking.
+check:
+    pnpm check
+    pnpm typecheck
+
+# Format source files.
+fmt:
+    pnpm format
+
+# Check formatting without modifying files.
+fmt-check:
+    pnpm exec biome format .
+
+# Build the browser frontend.
+build:
+    pnpm build
+
+# Run the local verification gate.
+ci: check test build
+
+# Run unit/component tests.
+test:
+    pnpm test
+
+# Run tests in watch mode.
+test-watch:
+    pnpm test:watch
+
+# Run tests with coverage.
+test-coverage:
+    pnpm test:coverage
+
+# Run E2E smoke tests. Builds first through the npm script.
+test-e2e:
+    pnpm test:e2e:smoke
+
+# Run all E2E tests. Builds first through the npm script.
+test-e2e-all:
+    pnpm test:e2e
+
+# Start the browser frontend dev server.
+dev:
+    VITE_PORT={{ vite_port }} pnpm dev -- --host 127.0.0.1 --port {{ vite_port }} --strictPort
+
+# Alias kept for compatibility with existing docs and scripts.
+dev-frontend: dev
+
+# Parse `git worktree list --porcelain` into tab-separated "path\tbranch" lines.
+# Uses sub() instead of $2 so worktree paths containing spaces are preserved.
+# Detached-HEAD worktrees (no branch line) are silently skipped.
+_worktree_awk := '/^worktree / { sub(/^worktree /, ""); wt=$0 } /^branch refs\/heads\// { b=$2; sub(/^refs\/heads\//, "", b); print wt "\t" b }'
+
+# Compute a stable vite port from a directory path passed as $1.
+_port_cmd := "import hashlib,sys; h=int(hashlib.sha256(sys.argv[1].encode()).hexdigest(),16); print(10000+h%55000)"
+
+# List worktrees with an active dev server.
+running:
+    #!/usr/bin/env bash
+    git worktree list --porcelain | awk '{{ _worktree_awk }}' \
+    | while IFS=$'\t' read -r wt branch; do
+        dir="$wt/ui/goose2web"
+        port=$(python3 -c '{{ _port_cmd }}' "$dir")
+        if lsof -ti :"$port" &>/dev/null; then
+            echo "$branch"
+        fi
+    done
+
+# Kill the dev process. Optionally pass a branch name to kill another worktree's process.
+kill branch="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ -n "{{ branch }}" ]]; then
+        WORKTREE_PATH=$(git worktree list --porcelain \
+            | awk '{{ _worktree_awk }}' \
+            | awk -F'\t' -v branch="{{ branch }}" '$2 == branch { print $1; exit }')
+        if [[ -z "$WORKTREE_PATH" ]]; then
+            echo "No worktree found for branch '{{ branch }}'"
+            exit 1
+        fi
+        TARGET_DIR="$WORKTREE_PATH/ui/goose2web"
+        VITE_PORT=$(python3 -c '{{ _port_cmd }}' "$TARGET_DIR")
+    else
+        VITE_PORT={{ vite_port }}
+    fi
+
+    PID=$(lsof -ti :"$VITE_PORT" 2>/dev/null | head -1) || true
+
+    if [[ -z "$PID" ]]; then
+        echo "No process found on port $VITE_PORT"
+        exit 0
+    fi
+
+    PROC_NAME=$(ps -p "$PID" -o comm= 2>/dev/null) || true
+    PROC_BASENAME="${PROC_NAME##*/}"
+    if [[ "$PROC_BASENAME" != "node" ]]; then
+        echo "Process on port $VITE_PORT is '$PROC_NAME', not 'node' - refusing to kill"
+        exit 1
+    fi
+
+    PGID=$(ps -p "$PID" -o pgid= 2>/dev/null | tr -d ' ')
+    if [[ -z "$PGID" || "$PGID" == "0" || "$PGID" == "1" ]]; then
+        echo "Killing node (PID $PID) on port $VITE_PORT"
+        kill -9 "$PID"
+    else
+        echo "Killing process group $PGID (found via node PID $PID on port $VITE_PORT)"
+        kill -9 -"$PGID" 2>/dev/null || true
+    fi
+
+# Kill all dev processes across all worktrees.
+kill-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branches=$(just running)
+    if [[ -z "$branches" ]]; then
+        echo "No running dev servers found"
+        exit 0
+    fi
+    while read -r branch; do
+        just kill "$branch" || true
+    done <<< "$branches"
+
+# Clean browser build artifacts.
+clean:
+    rm -rf dist
+    rm -rf node_modules

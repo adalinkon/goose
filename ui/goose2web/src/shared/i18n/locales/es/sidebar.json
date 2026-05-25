@@ -1,0 +1,59 @@
+{
+  "actions": {
+    "backToMainNavigation": "Volver a la navegación principal",
+    "collapse": "Contraer barra lateral",
+    "expand": "Expandir barra lateral",
+    "newChat": "Nuevo chat",
+    "newChatInProject": "Nuevo chat en el proyecto",
+    "newProject": "Nuevo proyecto",
+    "renameHint": "Haz doble clic para renombrar"
+  },
+  "menu": {
+    "optionsFor": "Opciones para {{label}}"
+  },
+  "navigation": {
+    "main": "Navegación principal",
+    "agents": "Agentes",
+    "extensions": "Extensiones",
+    "home": "Inicio",
+    "sessionHistory": "Historial de sesiones",
+    "skills": "Habilidades"
+  },
+  "search": {
+    "error": "La búsqueda de mensajes falló. Mostrando solo coincidencias de metadatos. Inténtalo de nuevo.",
+    "placeholder": "Buscar chats...",
+    "searching": "Buscando chats..."
+  },
+  "servers": {
+    "title": "Servidores",
+    "open": "Abrir servidores",
+    "close": "Cerrar servidores",
+    "back": "Volver",
+    "none": "Sin servidor",
+    "empty": "No se encontraron servidores.",
+    "remove": "Eliminar servidor",
+    "edit": "Editar servidor",
+    "searchPlaceholder": "Buscar servidores",
+    "addServer": "Agregar servidor",
+    "editServer": "Editar servidor",
+    "saveServer": "Guardar servidor",
+    "serverAddress": "Dirección del servidor",
+    "serverNameOptional": "Nombre del servidor (opcional)",
+    "usernameOptional": "Usuario (opcional)",
+    "tokenOptional": "Token (opcional)",
+    "namePlaceholder": "nombre_servidor",
+    "urlPlaceholder": "127.0.0.1:3284",
+    "usernamePlaceholder": "usuario",
+    "tokenPlaceholder": "token",
+    "noUsername": "sin usuario"
+  },
+  "sections": {
+    "projects": "Proyectos",
+    "recents": "Chats"
+  },
+  "showLess": "Mostrar menos",
+  "viewAllChats_one": "Ver {{displayCount}} chat",
+  "viewAllChats_other": "Ver los {{displayCount}} chats",
+  "moreChats_one": "{{displayCount}} más",
+  "moreChats_other": "{{displayCount}} más"
+}

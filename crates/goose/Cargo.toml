@@ -209,6 +209,8 @@ process-wrap = { version = "9.1.0", features = ["std"] }
 nostr = { version = "0.44.3", features = ["nip44"] }
 nostr-sdk = { version = "0.44.1", features = ["nip44"] }
 rustls = { version = "0.23", features = ["aws_lc_rs"], optional = true }
+doctor = { git = "https://github.com/block/builderbot", rev = "8e1c3ec145edc0df5f04b4427cfd758378036862", version = "0.1.0" }
+mime_guess = "2"
 
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -244,6 +246,7 @@ http.workspace = true
 goose-mcp = { path = "../goose-mcp" }
 insta = "1.47.2"
 dtor = "1.0.3"
+tower = "0.5.2"
 
 [[example]]
 name = "agent"
