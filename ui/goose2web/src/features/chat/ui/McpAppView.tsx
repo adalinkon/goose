@@ -366,7 +366,7 @@ export function McpAppView({
   const handleReadResource = useCallback(
     async ({ uri }: { uri: string }) => {
       const client = await getClient();
-      const response = await client.goose.GooseResourceRead({
+      const response = await client.goose.resourcesRead_unstable({
         sessionId: payload.sessionId,
         uri,
         extensionName: payload.tool.extensionName,

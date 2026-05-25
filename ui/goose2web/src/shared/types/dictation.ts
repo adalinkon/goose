@@ -1,7 +1,7 @@
 export type {
   DictationModelOption,
   DictationProviderStatusEntry as DictationProviderStatus,
-  DictationTranscribeResponse,
+  DictationTranscribeResponse_unstable,
   DictationLocalModelStatus as WhisperModelStatus,
   DictationDownloadProgress,
 } from "@aaif/goose-sdk";

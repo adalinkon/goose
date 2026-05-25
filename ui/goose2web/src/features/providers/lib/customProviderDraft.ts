@@ -9,7 +9,7 @@ import {
 import type {
   CustomProviderDraft,
   CustomProviderEngine,
-  CustomProviderReadResponse,
+  CustomProviderReadResponse_unstable,
   CustomProviderUpsertRequest,
   ProviderTemplateDto,
 } from "./customProviderTypes";
@@ -99,7 +99,7 @@ export function templateToCustomProviderDraft(
 }
 
 export function readToCustomProviderDraft(
-  response: CustomProviderReadResponse,
+  response: CustomProviderReadResponse_unstable,
 ): CustomProviderDraft {
   const provider = response.provider;
   const models = parseCustomProviderModels(provider.models ?? []);

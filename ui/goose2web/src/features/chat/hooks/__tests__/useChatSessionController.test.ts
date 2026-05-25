@@ -10,7 +10,7 @@ const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
 const mockSetSelectedProvider = vi.fn();
 const mockResolveSessionCwd = vi.fn();
-const mockGooseDefaultsRead = vi.fn();
+const mockdefaultsRead_unstable = vi.fn();
 const mockUseProviderInventory = vi.fn();
 const mockPickerState = {
   pickerAgents: [{ id: "goose", label: "Goose" }],
@@ -42,7 +42,7 @@ vi.mock("@/shared/api/acp", () => ({
 vi.mock("@/shared/api/acpConnection", () => ({
   getClient: async () => ({
     goose: {
-      GooseDefaultsRead: (...args: unknown[]) => mockGooseDefaultsRead(...args),
+      defaultsRead_unstable: (...args: unknown[]) => mockdefaultsRead_unstable(...args),
     },
   }),
 }));
@@ -127,7 +127,7 @@ describe("useChatSessionController", () => {
     mockAcpPrepareSession.mockResolvedValue(undefined);
     mockAcpSetModel.mockResolvedValue(undefined);
     mockResolveSessionCwd.mockResolvedValue("/tmp/project");
-    mockGooseDefaultsRead.mockResolvedValue({
+    mockdefaultsRead_unstable.mockResolvedValue({
       providerId: null,
       modelId: null,
     });
@@ -296,7 +296,7 @@ describe("useChatSessionController", () => {
 
   it("falls back to the configured goose default model when no explicit model is stored", async () => {
     useAgentStore.setState({ selectedProvider: "goose" });
-    mockGooseDefaultsRead.mockResolvedValue({
+    mockdefaultsRead_unstable.mockResolvedValue({
       providerId: "databricks",
       modelId: "goose-claude-4-6-opus",
     });

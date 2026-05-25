@@ -61,7 +61,7 @@ export function buildProviderListFromEntries(
 
 export async function listProviders(): Promise<AcpProvider[]> {
   const client = await getClient();
-  const result = await client.goose.GooseProvidersList({
+  const result = await client.goose.providersList_unstable({
     providerIds: [],
   });
   return buildProviderListFromEntries(result.entries);
@@ -87,14 +87,14 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
 
 export async function exportSession(sessionId: string): Promise<string> {
   const client = await getClient();
-  const result = await client.goose.GooseSessionExport({ sessionId });
+  const result = await client.goose.sessionExport_unstable({ sessionId });
   // biome-ignore lint/suspicious/noExplicitAny: SDK doesn't expose data field on export result
   return (result as any).data;
 }
 
 export async function importSession(json: string): Promise<AcpSessionInfo> {
   const client = await getClient();
-  const result = await client.goose.GooseSessionImport({ data: json });
+  const result = await client.goose.sessionImport_unstable({ data: json });
   return result as unknown as AcpSessionInfo;
 }
 

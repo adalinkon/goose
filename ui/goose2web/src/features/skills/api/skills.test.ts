@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockGooseSourcesList = vi.fn();
+const mocksourcesList_unstable = vi.fn();
 
 vi.mock("@/shared/api/acpConnection", () => ({
   getClient: async () => ({
     goose: {
-      GooseSourcesList: (...args: unknown[]) => mockGooseSourcesList(...args),
+      sourcesList_unstable: (...args: unknown[]) => mocksourcesList_unstable(...args),
     },
   }),
 }));
@@ -17,7 +17,7 @@ describe("listSkills", () => {
   });
 
   it("aggregates project skill listings and recognizes .agents skill paths", async () => {
-    mockGooseSourcesList
+    mocksourcesList_unstable
       .mockResolvedValueOnce({
         sources: [
           {
@@ -55,13 +55,13 @@ describe("listSkills", () => {
     const { listSkills } = await import("./skills");
     const skills = await listSkills(["/tmp/alpha", "/tmp/alpha"]);
 
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(1, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(1, {
       type: "skill",
     });
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(2, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(2, {
       type: "builtinSkill",
     });
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(3, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(3, {
       type: "skill",
       projectDir: "/tmp/alpha",
     });
@@ -87,7 +87,7 @@ describe("listSkills", () => {
   });
 
   it("recognizes legacy .goose project skill paths", async () => {
-    mockGooseSourcesList
+    mocksourcesList_unstable
       .mockResolvedValueOnce({ sources: [] })
       .mockResolvedValueOnce({ sources: [] })
       .mockResolvedValueOnce({
@@ -125,7 +125,7 @@ describe("listSkills", () => {
   });
 
   it("keeps available skills when a project skill listing fails", async () => {
-    mockGooseSourcesList
+    mocksourcesList_unstable
       .mockResolvedValueOnce({
         sources: [
           {
@@ -156,7 +156,7 @@ describe("listSkills", () => {
     const { listSkills } = await import("./skills");
     const skills = await listSkills(["/tmp/alpha", "/tmp/beta"]);
 
-    expect(mockGooseSourcesList).toHaveBeenCalledTimes(4);
+    expect(mocksourcesList_unstable).toHaveBeenCalledTimes(4);
     expect(skills.map((skill) => skill.name)).toEqual([
       "code-review",
       "test-writer",
@@ -164,7 +164,7 @@ describe("listSkills", () => {
   });
 
   it("keeps filesystem skills when built-in skill listing fails", async () => {
-    mockGooseSourcesList
+    mocksourcesList_unstable
       .mockResolvedValueOnce({
         sources: [
           {
@@ -194,13 +194,13 @@ describe("listSkills", () => {
     const { listSkills } = await import("./skills");
     const skills = await listSkills(["/tmp/alpha"]);
 
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(1, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(1, {
       type: "skill",
     });
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(2, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(2, {
       type: "builtinSkill",
     });
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(3, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(3, {
       type: "skill",
       projectDir: "/tmp/alpha",
     });
@@ -211,7 +211,7 @@ describe("listSkills", () => {
   });
 
   it("fetches and maps built-in skills without filesystem project/global metadata", async () => {
-    mockGooseSourcesList
+    mocksourcesList_unstable
       .mockResolvedValueOnce({
         sources: [
           {
@@ -252,13 +252,13 @@ describe("listSkills", () => {
     const { listSkills } = await import("./skills");
     const skills = await listSkills(["/tmp/alpha"]);
 
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(1, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(1, {
       type: "skill",
     });
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(2, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(2, {
       type: "builtinSkill",
     });
-    expect(mockGooseSourcesList).toHaveBeenNthCalledWith(3, {
+    expect(mocksourcesList_unstable).toHaveBeenNthCalledWith(3, {
       type: "skill",
       projectDir: "/tmp/alpha",
     });

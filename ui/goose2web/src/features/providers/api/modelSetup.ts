@@ -1,4 +1,4 @@
-import type { ProviderConfigChangeResponse } from "@aaif/goose-sdk";
+import type { ProviderConfigChangeResponse_unstable } from "@aaif/goose-sdk";
 import { backendFetch } from "@/shared/api/gooseServeHttp";
 
 type UnlistenFn = () => void;
@@ -24,7 +24,7 @@ function emit(providerId: string, line: string) {
 export async function authenticateModelProvider(
   providerId: string,
   providerLabel: string,
-): Promise<ProviderConfigChangeResponse | undefined> {
+): Promise<ProviderConfigChangeResponse_unstable | undefined> {
   const response = await backendFetch("/providers/setup/model/authenticate", {
     method: "POST",
     body: { providerId, providerLabel },

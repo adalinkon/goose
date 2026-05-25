@@ -19,7 +19,7 @@ import {
   authenticateModelProvider,
   onModelSetupOutput,
 } from "@/features/providers/api/modelSetup";
-import type { ProviderConfigChangeResponse } from "@aaif/goose-sdk";
+import type { ProviderConfigChangeResponse_unstable } from "@aaif/goose-sdk";
 import type {
   ProviderDisplayInfo,
   ProviderField,
@@ -54,7 +54,7 @@ interface ModelProviderRowProps {
   onRemoveConfig?: () => Promise<void>;
   onCompleteNativeSetup: (
     providerId: string,
-    result?: ProviderConfigChangeResponse,
+    result?: ProviderConfigChangeResponse_unstable,
   ) => Promise<void>;
   saving?: boolean;
   inventorySyncing?: boolean;

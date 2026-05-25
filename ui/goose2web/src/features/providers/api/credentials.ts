@@ -1,5 +1,5 @@
 import type {
-  ProviderConfigChangeResponse,
+  ProviderConfigChangeResponse_unstable,
   ProviderConfigFieldUpdate,
   ProviderConfigStatusDto,
 } from "@aaif/goose-sdk";
@@ -13,35 +13,35 @@ export async function getProviderConfig(
   providerId: string,
 ): Promise<ProviderFieldValue[]> {
   const client = await getClient();
-  const response = await client.goose.GooseProvidersConfigRead({ providerId });
+  const response = await client.goose.providersConfigRead_unstable({ providerId });
   return response.fields;
 }
 
 export async function saveProviderConfig(
   providerId: string,
   fields: ProviderFieldSaveInput[],
-): Promise<ProviderConfigChangeResponse> {
+): Promise<ProviderConfigChangeResponse_unstable> {
   const client = await getClient();
-  return client.goose.GooseProvidersConfigSave({ providerId, fields });
+  return client.goose.providersConfigSave_unstable({ providerId, fields });
 }
 
 export async function authenticateProviderConfig(
   providerId: string,
-): Promise<ProviderConfigChangeResponse> {
+): Promise<ProviderConfigChangeResponse_unstable> {
   const client = await getClient();
-  return client.goose.GooseProvidersConfigAuthenticate({ providerId });
+  return client.goose.providersConfigAuthenticate_unstable({ providerId });
 }
 
 export async function deleteProviderConfig(
   providerId: string,
-): Promise<ProviderConfigChangeResponse> {
+): Promise<ProviderConfigChangeResponse_unstable> {
   const client = await getClient();
-  return client.goose.GooseProvidersConfigDelete({ providerId });
+  return client.goose.providersConfigDelete_unstable({ providerId });
 }
 
 export async function checkAllProviderStatus(): Promise<ProviderStatus[]> {
   const client = await getClient();
-  const response = await client.goose.GooseProvidersConfigStatus({
+  const response = await client.goose.providersConfigStatus_unstable({
     providerIds: [],
   });
   return response.statuses;

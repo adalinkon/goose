@@ -68,7 +68,7 @@ function toSourceProperties(data: {
 
 async function listAgentSources(): Promise<SourceEntry[]> {
   const client = await getClient();
-  const response = await client.goose.GooseSourcesList({
+  const response = await client.goose.sourcesList_unstable({
     type: AGENT_SOURCE_TYPE,
   });
   return response.sources.filter((entry) => entry.type === AGENT_SOURCE_TYPE);
@@ -136,12 +136,12 @@ export async function createPersona(
 ): Promise<Persona> {
   const client = await getClient();
   const now = new Date().toISOString();
-  const response = await client.goose.GooseSourcesCreate({
+  const response = await client.goose.sourcesCreate_unstable({
     type: AGENT_SOURCE_TYPE,
     name: request.displayName,
     description: "",
     content: request.systemPrompt,
-    global: true,
+    target: { scope: "global" },
     properties: toSourceProperties({
       avatar: request.avatar,
       provider: request.provider,
@@ -159,7 +159,7 @@ export async function updatePersona(
 ): Promise<Persona> {
   const source = await getAgentSourceByPath(id);
   const properties = source.properties ?? {};
-  const response = await (await getClient()).goose.GooseSourcesUpdate({
+  const response = await (await getClient()).goose.sourcesUpdate_unstable({
     type: AGENT_SOURCE_TYPE,
     path: source.path,
     name: request.displayName ?? source.name,
@@ -189,7 +189,7 @@ export async function updatePersona(
 }
 
 export async function deletePersona(id: string): Promise<void> {
-  await (await getClient()).goose.GooseSourcesDelete({
+  await (await getClient()).goose.sourcesDelete_unstable({
     type: AGENT_SOURCE_TYPE,
     path: id,
   });
@@ -205,7 +205,7 @@ export interface ExportResult {
 }
 
 export async function exportPersona(id: string): Promise<ExportResult> {
-  const response = await (await getClient()).goose.GooseSourcesExport({
+  const response = await (await getClient()).goose.sourcesExport_unstable({
     type: AGENT_SOURCE_TYPE,
     path: id,
   });
@@ -226,9 +226,9 @@ export async function importPersonas(
   const importedSources: SourceEntry[] = [];
 
   for (const payload of payloads) {
-    const response = await client.goose.GooseSourcesImport({
+    const response = await client.goose.sourcesImport_unstable({
       data: normalizeLegacyPersonaPayload(payload),
-      global: true,
+      target: { scope: "global" },
     });
     importedSources.push(...response.sources);
   }

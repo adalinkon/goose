@@ -22,7 +22,7 @@ type ConfigReadResult =
 async function readAutoCompactThreshold(): Promise<ConfigReadResult> {
   try {
     const client = await getClient();
-    const response = await client.goose.GoosePreferencesRead({
+    const response = await client.goose.preferencesRead_unstable({
       keys: [AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY],
     });
     const preference = response.values.find(
@@ -39,7 +39,7 @@ async function readAutoCompactThreshold(): Promise<ConfigReadResult> {
 
 async function writeAutoCompactThreshold(value: number): Promise<void> {
   const client = await getClient();
-  await client.goose.GoosePreferencesSave({
+  await client.goose.preferencesSave_unstable({
     values: [{ key: AUTO_COMPACT_THRESHOLD_PREFERENCE_KEY, value }],
   });
 }

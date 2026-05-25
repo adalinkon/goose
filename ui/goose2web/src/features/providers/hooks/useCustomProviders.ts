@@ -18,12 +18,12 @@ import {
 } from "../lib/customProviderValidation";
 import { customProviderDraftToUpsertRequest } from "../lib/customProviderDraft";
 import type {
-  CustomProviderCreateResponse,
-  CustomProviderDeleteResponse,
+  CustomProviderCreateResponse_unstable,
+  CustomProviderDeleteResponse_unstable,
   CustomProviderDraft,
   CustomProviderFormat,
-  CustomProviderReadResponse,
-  CustomProviderUpdateResponse,
+  CustomProviderReadResponse_unstable,
+  CustomProviderUpdateResponse_unstable,
   CustomProviderUpsertRequest,
   ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
@@ -48,19 +48,19 @@ interface UseCustomProvidersReturn {
     format?: CustomProviderFormat,
   ) => Promise<ProviderTemplateCatalogEntryDto[]>;
   getTemplate: (providerId: string) => Promise<ProviderTemplateDto>;
-  read: (providerId: string) => Promise<CustomProviderReadResponse>;
+  read: (providerId: string) => Promise<CustomProviderReadResponse_unstable>;
   create: (
     input: CustomProviderUpsertRequest,
-  ) => Promise<CustomProviderCreateResponse>;
+  ) => Promise<CustomProviderCreateResponse_unstable>;
   update: (
     providerId: string,
     input: CustomProviderUpsertRequest,
-  ) => Promise<CustomProviderUpdateResponse>;
-  remove: (providerId: string) => Promise<CustomProviderDeleteResponse>;
+  ) => Promise<CustomProviderUpdateResponse_unstable>;
+  remove: (providerId: string) => Promise<CustomProviderDeleteResponse_unstable>;
   saveDraft: (
     draft: CustomProviderDraft,
     options?: SaveDraftOptions,
-  ) => Promise<CustomProviderCreateResponse | CustomProviderUpdateResponse>;
+  ) => Promise<CustomProviderCreateResponse_unstable | CustomProviderUpdateResponse_unstable>;
 }
 
 function errorMessage(error: unknown): string {

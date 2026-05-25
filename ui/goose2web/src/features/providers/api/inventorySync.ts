@@ -1,6 +1,6 @@
 import type {
   ProviderInventoryEntryDto,
-  RefreshProviderInventoryResponse,
+  RefreshProviderInventoryResponse_unstable,
 } from "@aaif/goose-sdk";
 import { getProviderInventory, refreshProviderInventory } from "./inventory";
 
@@ -12,14 +12,14 @@ type RefreshProviderInventory = typeof refreshProviderInventory;
 interface SyncProviderInventoryOptions {
   getInventory?: GetProviderInventory;
   refreshInventory?: RefreshProviderInventory;
-  initialRefresh?: RefreshProviderInventoryResponse;
+  initialRefresh?: RefreshProviderInventoryResponse_unstable;
   onEntries?: (entries: ProviderInventoryEntryDto[]) => void;
   sleep?: (ms: number) => Promise<void>;
 }
 
 export interface SyncProviderInventoryResult {
   entries: ProviderInventoryEntryDto[];
-  refresh: RefreshProviderInventoryResponse;
+  refresh: RefreshProviderInventoryResponse_unstable;
   settled: boolean;
   polledProviderIds: string[];
 }
@@ -41,12 +41,12 @@ function mergeEntries(
   }
 }
 
-function skippedProviderIds(refresh: RefreshProviderInventoryResponse) {
+function skippedProviderIds(refresh: RefreshProviderInventoryResponse_unstable) {
   return (refresh.skipped ?? []).map((skip) => skip.providerId);
 }
 
 function alreadyRefreshingProviderIds(
-  refresh: RefreshProviderInventoryResponse,
+  refresh: RefreshProviderInventoryResponse_unstable,
 ) {
   return (refresh.skipped ?? [])
     .filter((skip) => skip.reason === "already_refreshing")

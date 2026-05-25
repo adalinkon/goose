@@ -1,27 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { exportPersona, importPersonas, refreshPersonas } from "../agents";
 
-const mockGooseSourcesExport = vi.fn();
-const mockGooseSourcesImport = vi.fn();
-const mockGooseSourcesList = vi.fn();
+const mocksourcesExport_unstable = vi.fn();
+const mocksourcesImport_unstable = vi.fn();
+const mocksourcesList_unstable = vi.fn();
 
 vi.mock("../acpConnection", () => ({
   getClient: vi.fn(async () => ({
     goose: {
-      GooseSourcesExport: (...args: unknown[]) =>
-        mockGooseSourcesExport(...args),
-      GooseSourcesImport: (...args: unknown[]) =>
-        mockGooseSourcesImport(...args),
-      GooseSourcesList: (...args: unknown[]) => mockGooseSourcesList(...args),
+      sourcesExport_unstable: (...args: unknown[]) =>
+        mocksourcesExport_unstable(...args),
+      sourcesImport_unstable: (...args: unknown[]) =>
+        mocksourcesImport_unstable(...args),
+      sourcesList_unstable: (...args: unknown[]) => mocksourcesList_unstable(...args),
     },
   })),
 }));
 
 describe("agents API", () => {
   beforeEach(() => {
-    mockGooseSourcesExport.mockReset();
-    mockGooseSourcesImport.mockReset();
-    mockGooseSourcesList.mockReset();
+    mocksourcesExport_unstable.mockReset();
+    mocksourcesImport_unstable.mockReset();
+    mocksourcesList_unstable.mockReset();
   });
 
   it("exportPersona calls ACP sources export", async () => {
@@ -29,11 +29,11 @@ describe("agents API", () => {
       json: '{"displayName":"Test"}',
       filename: "test.agent.json",
     };
-    mockGooseSourcesExport.mockResolvedValue(mockResult);
+    mocksourcesExport_unstable.mockResolvedValue(mockResult);
 
     const result = await exportPersona("/tmp/persona-123.md");
 
-    expect(mockGooseSourcesExport).toHaveBeenCalledWith({
+    expect(mocksourcesExport_unstable).toHaveBeenCalledWith({
       type: "agent",
       path: "/tmp/persona-123.md",
     });
@@ -44,7 +44,7 @@ describe("agents API", () => {
   });
 
   it("importPersonas imports ACP agent sources from JSON payload", async () => {
-    mockGooseSourcesImport.mockResolvedValue({
+    mocksourcesImport_unstable.mockResolvedValue({
       sources: [
         {
           type: "agent",
@@ -69,7 +69,7 @@ describe("agents API", () => {
     const fileBytes = Array.from(new TextEncoder().encode(json));
     const result = await importPersonas(fileBytes, "personas.json");
 
-    expect(mockGooseSourcesImport).toHaveBeenCalledWith({
+    expect(mocksourcesImport_unstable).toHaveBeenCalledWith({
       data: json,
       global: true,
     });
@@ -78,7 +78,7 @@ describe("agents API", () => {
   });
 
   it("refreshPersonas reads from ACP sources list", async () => {
-    mockGooseSourcesList.mockResolvedValue({
+    mocksourcesList_unstable.mockResolvedValue({
       sources: [
         {
           type: "agent",
@@ -95,7 +95,7 @@ describe("agents API", () => {
 
     const result = await refreshPersonas();
 
-    expect(mockGooseSourcesList).toHaveBeenCalledWith({
+    expect(mocksourcesList_unstable).toHaveBeenCalledWith({
       type: "agent",
     });
     expect(result).toHaveLength(1);

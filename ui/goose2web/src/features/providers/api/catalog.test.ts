@@ -18,7 +18,7 @@ describe("provider setup catalog API", () => {
     vi.clearAllMocks();
     mocks.getClient.mockResolvedValue({
       goose: {
-        GooseProvidersSetupCatalogList: mocks.catalogList,
+        providersSetupCatalogList_unstable: mocks.catalogList,
       },
     });
   });

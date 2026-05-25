@@ -27,7 +27,7 @@ describe("useVoiceInputPreferences", () => {
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GoosePreferencesRead: vi.fn().mockImplementation(() => {
+        preferencesRead_unstable: vi.fn().mockImplementation(() => {
           if (shouldFailProviderRead) {
             return Promise.reject(new Error("temporary acp failure"));
           }
@@ -39,8 +39,8 @@ describe("useVoiceInputPreferences", () => {
             ],
           });
         }),
-        GoosePreferencesSave: vi.fn().mockResolvedValue({}),
-        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
+        preferencesSave_unstable: vi.fn().mockResolvedValue({}),
+        preferencesRemove_unstable: vi.fn().mockResolvedValue({}),
       },
     });
 
@@ -71,7 +71,7 @@ describe("useVoiceInputPreferences", () => {
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GoosePreferencesRead: vi
+        preferencesRead_unstable: vi
           .fn()
           .mockResolvedValueOnce({
             values: [
@@ -81,10 +81,10 @@ describe("useVoiceInputPreferences", () => {
             ],
           })
           .mockImplementation(() => providerRead.promise),
-        GoosePreferencesSave: upsert.mockImplementation(
+        preferencesSave_unstable: upsert.mockImplementation(
           () => pendingWrite.promise,
         ),
-        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
+        preferencesRemove_unstable: vi.fn().mockResolvedValue({}),
       },
     });
 
@@ -132,9 +132,9 @@ describe("useVoiceInputPreferences", () => {
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GoosePreferencesRead: read,
-        GoosePreferencesSave: save,
-        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
+        preferencesRead_unstable: read,
+        preferencesSave_unstable: save,
+        preferencesRemove_unstable: vi.fn().mockResolvedValue({}),
       },
     });
 
@@ -163,15 +163,15 @@ describe("useVoiceInputPreferences", () => {
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GoosePreferencesRead: vi.fn().mockResolvedValue({
+        preferencesRead_unstable: vi.fn().mockResolvedValue({
           values: [
             { key: "voiceAutoSubmitPhrases", value: null },
             { key: "voiceDictationProvider", value: "groq" },
             { key: "voiceDictationPreferredMic", value: null },
           ],
         }),
-        GoosePreferencesSave: save,
-        GoosePreferencesRemove: vi.fn().mockResolvedValue({}),
+        preferencesSave_unstable: save,
+        preferencesRemove_unstable: vi.fn().mockResolvedValue({}),
       },
     });
 
@@ -194,15 +194,15 @@ describe("useVoiceInputPreferences", () => {
 
     mockGetClient.mockResolvedValue({
       goose: {
-        GoosePreferencesRead: vi.fn().mockResolvedValue({
+        preferencesRead_unstable: vi.fn().mockResolvedValue({
           values: [
             { key: "voiceAutoSubmitPhrases", value: "submit" },
             { key: "voiceDictationProvider", value: "groq" },
             { key: "voiceDictationPreferredMic", value: "mic-1" },
           ],
         }),
-        GoosePreferencesSave: vi.fn().mockResolvedValue({}),
-        GoosePreferencesRemove: remove,
+        preferencesSave_unstable: vi.fn().mockResolvedValue({}),
+        preferencesRemove_unstable: remove,
       },
     });
 

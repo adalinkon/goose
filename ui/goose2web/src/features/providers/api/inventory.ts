@@ -1,6 +1,6 @@
 import type {
   ProviderInventoryEntryDto,
-  RefreshProviderInventoryResponse,
+  RefreshProviderInventoryResponse_unstable,
 } from "@aaif/goose-sdk";
 import { getClient } from "@/shared/api/acpConnection";
 import { perfLog } from "@/shared/lib/perfLog";
@@ -10,7 +10,7 @@ export async function getProviderInventory(
 ): Promise<ProviderInventoryEntryDto[]> {
   const client = await getClient();
   const t0 = performance.now();
-  const response = await client.goose.GooseProvidersList({ providerIds });
+  const response = await client.goose.providersList_unstable({ providerIds });
   perfLog(
     `[perf:inventory] getProviderInventory done in ${(performance.now() - t0).toFixed(1)}ms (n=${response.entries.length})`,
   );
@@ -19,10 +19,10 @@ export async function getProviderInventory(
 
 export async function refreshProviderInventory(
   providerIds: string[] = [],
-): Promise<RefreshProviderInventoryResponse> {
+): Promise<RefreshProviderInventoryResponse_unstable> {
   const client = await getClient();
   const t0 = performance.now();
-  const response = await client.goose.GooseProvidersInventoryRefresh({
+  const response = await client.goose.providersInventoryRefresh_unstable({
     providerIds,
   });
   perfLog(

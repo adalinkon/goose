@@ -6,7 +6,7 @@ import {
   type ProviderStatus,
   checkAllProviderStatus,
 } from "@/features/providers/api/credentials";
-import type { ProviderConfigChangeResponse } from "@aaif/goose-sdk";
+import type { ProviderConfigChangeResponse_unstable } from "@aaif/goose-sdk";
 import { notifyVoiceDictationConfigChanged } from "@/features/chat/lib/voiceInput";
 import {
   syncProviderInventory,
@@ -34,7 +34,7 @@ interface UseCredentialsReturn {
   remove: (providerId: string) => Promise<void>;
   completeNativeSetup: (
     providerId: string,
-    result?: ProviderConfigChangeResponse,
+    result?: ProviderConfigChangeResponse_unstable,
   ) => Promise<void>;
 }
 
@@ -238,7 +238,7 @@ export function useCredentials(): UseCredentialsReturn {
   );
 
   const completeNativeSetup = useCallback(
-    async (providerId: string, result?: ProviderConfigChangeResponse) => {
+    async (providerId: string, result?: ProviderConfigChangeResponse_unstable) => {
       if (result) {
         updateProviderStatus(result.status);
         notifyVoiceDictationConfigChanged();

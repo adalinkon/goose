@@ -7,7 +7,7 @@ import {
 import type {
   CustomProviderDraft,
   CustomProviderEngine,
-  CustomProviderReadResponse,
+  CustomProviderReadResponse_unstable,
   ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from "@/features/providers/lib/customProviderTypes";
@@ -62,7 +62,7 @@ export function catalogEntryToTemplate(
 }
 
 export function readResponseToFormValue(
-  response: CustomProviderReadResponse,
+  response: CustomProviderReadResponse_unstable,
 ): CustomProviderFormValues {
   const provider = response.provider;
   return {

@@ -1,10 +1,10 @@
 import type {
   CustomProviderConfigDto,
-  CustomProviderCreateRequest,
-  CustomProviderCreateResponse,
-  CustomProviderDeleteResponse,
-  CustomProviderReadResponse,
-  CustomProviderUpdateResponse,
+  CustomProviderCreateRequest_unstable,
+  CustomProviderCreateResponse_unstable,
+  CustomProviderDeleteResponse_unstable,
+  CustomProviderReadResponse_unstable,
+  CustomProviderUpdateResponse_unstable,
   ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from "@aaif/goose-sdk";
@@ -41,7 +41,7 @@ export interface CustomProviderDraft {
 }
 
 export type CustomProviderUpsertRequest = Omit<
-  CustomProviderCreateRequest,
+  CustomProviderCreateRequest_unstable,
   "providerId"
 > & {
   engine: CustomProviderEngine;
@@ -49,10 +49,10 @@ export type CustomProviderUpsertRequest = Omit<
 
 export type {
   CustomProviderConfigDto,
-  CustomProviderCreateResponse,
-  CustomProviderDeleteResponse,
-  CustomProviderReadResponse,
-  CustomProviderUpdateResponse,
+  CustomProviderCreateResponse_unstable,
+  CustomProviderDeleteResponse_unstable,
+  CustomProviderReadResponse_unstable,
+  CustomProviderUpdateResponse_unstable,
   ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 };

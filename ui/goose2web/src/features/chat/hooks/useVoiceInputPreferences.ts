@@ -29,7 +29,7 @@ async function readPreferenceStrings(
 
   try {
     const client = await getClient();
-    const response = await client.goose.GoosePreferencesRead({ keys });
+    const response = await client.goose.preferencesRead_unstable({ keys });
     const values = new Map(
       response.values.map((entry) => [entry.key, entry.value]),
     );
@@ -55,12 +55,12 @@ async function writePreferenceString(
   value: string,
 ): Promise<void> {
   const client = await getClient();
-  await client.goose.GoosePreferencesSave({ values: [{ key, value }] });
+  await client.goose.preferencesSave_unstable({ values: [{ key, value }] });
 }
 
 async function removePreferenceKey(key: VoicePreferenceKey): Promise<void> {
   const client = await getClient();
-  await client.goose.GoosePreferencesRemove({ keys: [key] });
+  await client.goose.preferencesRemove_unstable({ keys: [key] });
 }
 
 export function useVoiceInputPreferences() {

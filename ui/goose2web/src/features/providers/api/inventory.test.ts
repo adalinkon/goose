@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { backgroundRefreshInventory } from "./inventory";
 
 const mockClient = vi.hoisted(() => ({
-  GooseProvidersList: vi.fn(),
-  GooseProvidersInventoryRefresh: vi.fn(),
+  providersList_unstable: vi.fn(),
+  providersInventoryRefresh_unstable: vi.fn(),
 }));
 
 vi.mock("@/shared/api/acpConnection", () => ({
@@ -44,12 +44,12 @@ describe("backgroundRefreshInventory", () => {
       providerEntry({ providerId: "openai", providerName: "OpenAI" }),
     ];
     const inventoryStore = { mergeEntries: vi.fn() };
-    mockClient.GooseProvidersList.mockResolvedValue({ entries });
+    mockClient.providersList_unstable.mockResolvedValue({ entries });
 
     await backgroundRefreshInventory(inventoryStore);
 
     expect(inventoryStore.mergeEntries).toHaveBeenCalledWith(entries);
-    expect(mockClient.GooseProvidersInventoryRefresh).not.toHaveBeenCalled();
+    expect(mockClient.providersInventoryRefresh_unstable).not.toHaveBeenCalled();
   });
 
   it("merges fetched inventory before returning when no refresh starts", async () => {
@@ -61,15 +61,15 @@ describe("backgroundRefreshInventory", () => {
       }),
     ];
     const inventoryStore = { mergeEntries: vi.fn() };
-    mockClient.GooseProvidersList.mockResolvedValue({ entries });
-    mockClient.GooseProvidersInventoryRefresh.mockResolvedValue({
+    mockClient.providersList_unstable.mockResolvedValue({ entries });
+    mockClient.providersInventoryRefresh_unstable.mockResolvedValue({
       started: [],
     });
 
     await backgroundRefreshInventory(inventoryStore);
 
     expect(inventoryStore.mergeEntries).toHaveBeenCalledWith(entries);
-    expect(mockClient.GooseProvidersInventoryRefresh).toHaveBeenCalledWith({
+    expect(mockClient.providersInventoryRefresh_unstable).toHaveBeenCalledWith({
       providerIds: ["openai"],
     });
   });
@@ -83,15 +83,15 @@ describe("backgroundRefreshInventory", () => {
       }),
     ];
     const inventoryStore = { mergeEntries: vi.fn() };
-    mockClient.GooseProvidersInventoryRefresh.mockResolvedValue({
+    mockClient.providersInventoryRefresh_unstable.mockResolvedValue({
       started: [],
     });
 
     await backgroundRefreshInventory(inventoryStore, entries);
 
-    expect(mockClient.GooseProvidersList).not.toHaveBeenCalled();
+    expect(mockClient.providersList_unstable).not.toHaveBeenCalled();
     expect(inventoryStore.mergeEntries).not.toHaveBeenCalled();
-    expect(mockClient.GooseProvidersInventoryRefresh).toHaveBeenCalledWith({
+    expect(mockClient.providersInventoryRefresh_unstable).toHaveBeenCalledWith({
       providerIds: ["openai"],
     });
   });

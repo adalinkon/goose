@@ -1,7 +1,7 @@
 import type {
-  DefaultsReadResponse,
+  DefaultsReadResponse_unstable,
   ProviderInventoryEntryDto,
-  OnboardingImportApplyResponse,
+  OnboardingImportApplyResponse_unstable,
   OnboardingImportCandidate,
   OnboardingImportCounts,
 } from "@aaif/goose-sdk";
@@ -9,8 +9,8 @@ import type {
 export const ONBOARDING_STORAGE_KEY = "goose:onboarding:v1";
 
 export type {
-  DefaultsReadResponse,
-  OnboardingImportApplyResponse,
+  DefaultsReadResponse_unstable,
+  OnboardingImportApplyResponse_unstable,
   OnboardingImportCandidate,
   OnboardingImportCounts,
 };

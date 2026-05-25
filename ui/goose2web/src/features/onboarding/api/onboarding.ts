@@ -1,37 +1,37 @@
 import type {
-  DefaultsReadResponse,
-  DefaultsSaveRequest,
-  OnboardingImportApplyRequest,
-  OnboardingImportApplyResponse,
+  DefaultsReadResponse_unstable,
+  DefaultsSaveRequest_unstable,
+  OnboardingImportApplyRequest_unstable,
+  OnboardingImportApplyResponse_unstable,
   OnboardingImportCandidate,
 } from "@aaif/goose-sdk";
 import { getClient } from "@/shared/api/acpConnection";
 
-export async function readDefaults(): Promise<DefaultsReadResponse> {
+export async function readDefaults(): Promise<DefaultsReadResponse_unstable> {
   const client = await getClient();
-  return client.goose.GooseDefaultsRead({});
+  return client.goose.defaultsRead_unstable({});
 }
 
 export async function saveDefaults(
-  params: DefaultsSaveRequest,
-): Promise<DefaultsReadResponse> {
+  params: DefaultsSaveRequest_unstable,
+): Promise<DefaultsReadResponse_unstable> {
   const client = await getClient();
-  return client.goose.GooseDefaultsSave(params);
+  return client.goose.defaultsSave_unstable(params);
 }
 
 export async function scanOnboardingImports(): Promise<
   OnboardingImportCandidate[]
 > {
   const client = await getClient();
-  const response = await client.goose.GooseOnboardingImportScan({
+  const response = await client.goose.onboardingImportScan_unstable({
     sources: [],
   });
   return response.candidates;
 }
 
 export async function applyOnboardingImports(
-  params: OnboardingImportApplyRequest,
-): Promise<OnboardingImportApplyResponse> {
+  params: OnboardingImportApplyRequest_unstable,
+): Promise<OnboardingImportApplyResponse_unstable> {
   const client = await getClient();
-  return client.goose.GooseOnboardingImportApply(params);
+  return client.goose.onboardingImportApply_unstable(params);
 }

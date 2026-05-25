@@ -3,7 +3,7 @@ import type { ExtensionConfig, ExtensionEntry } from "../types";
 
 export async function listExtensions(): Promise<ExtensionEntry[]> {
   const client = await getClient();
-  const response = await client.goose.GooseConfigExtensions({});
+  const response = await client.goose.configExtensionsList_unstable({});
   return response.extensions as ExtensionEntry[];
 }
 
@@ -13,7 +13,7 @@ export async function addExtension(
   enabled = false,
 ): Promise<void> {
   const client = await getClient();
-  await client.goose.GooseConfigExtensionsAdd({
+  await client.goose.configExtensionsAdd_unstable({
     name,
     extensionConfig,
     enabled,
@@ -22,7 +22,7 @@ export async function addExtension(
 
 export async function removeExtension(configKey: string): Promise<void> {
   const client = await getClient();
-  await client.goose.GooseConfigExtensionsRemove({ configKey });
+  await client.goose.configExtensionsRemove_unstable({ configKey });
 }
 
 export async function toggleExtension(
@@ -30,5 +30,5 @@ export async function toggleExtension(
   enabled: boolean,
 ): Promise<void> {
   const client = await getClient();
-  await client.goose.GooseConfigExtensionsToggle({ configKey, enabled });
+  await client.goose.configExtensionsToggle_unstable({ configKey, enabled });
 }

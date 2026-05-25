@@ -1,9 +1,9 @@
 import { getClient } from "@/shared/api/acpConnection";
 import type {
-  CustomProviderCreateResponse,
-  CustomProviderDeleteResponse,
-  CustomProviderReadResponse,
-  CustomProviderUpdateResponse,
+  CustomProviderCreateResponse_unstable,
+  CustomProviderDeleteResponse_unstable,
+  CustomProviderReadResponse_unstable,
+  CustomProviderUpdateResponse_unstable,
   ProviderTemplateCatalogEntryDto,
   ProviderTemplateDto,
 } from "@aaif/goose-sdk";
@@ -33,7 +33,7 @@ export async function listCustomProviderCatalog(
 ): Promise<ProviderTemplateCatalogEntryDto[]> {
   try {
     const client = await getProviderClient();
-    const response = await client.GooseProvidersCatalogList(
+    const response = await client.providersCatalogList_unstable(
       format ? { format } : {},
     );
     return response.providers;
@@ -47,7 +47,7 @@ export async function getCustomProviderTemplate(
 ): Promise<ProviderTemplateDto> {
   try {
     const client = await getProviderClient();
-    const response = await client.GooseProvidersCatalogTemplate({ providerId });
+    const response = await client.providersCatalogTemplate_unstable({ providerId });
     return response.template;
   } catch (error) {
     normalizeCustomProviderApiError(error);
@@ -56,10 +56,10 @@ export async function getCustomProviderTemplate(
 
 export async function createCustomProvider(
   input: CustomProviderUpsertRequest,
-): Promise<CustomProviderCreateResponse> {
+): Promise<CustomProviderCreateResponse_unstable> {
   try {
     const client = await getProviderClient();
-    return client.GooseProvidersCustomCreate(input);
+    return client.providersCustomCreate_unstable(input);
   } catch (error) {
     normalizeCustomProviderApiError(error);
   }
@@ -67,10 +67,10 @@ export async function createCustomProvider(
 
 export async function readCustomProvider(
   providerId: string,
-): Promise<CustomProviderReadResponse> {
+): Promise<CustomProviderReadResponse_unstable> {
   try {
     const client = await getProviderClient();
-    return client.GooseProvidersCustomRead({ providerId });
+    return client.providersCustomRead_unstable({ providerId });
   } catch (error) {
     normalizeCustomProviderApiError(error);
   }
@@ -79,10 +79,10 @@ export async function readCustomProvider(
 export async function updateCustomProvider(
   providerId: string,
   input: CustomProviderUpsertRequest,
-): Promise<CustomProviderUpdateResponse> {
+): Promise<CustomProviderUpdateResponse_unstable> {
   try {
     const client = await getProviderClient();
-    return client.GooseProvidersCustomUpdate({ ...input, providerId });
+    return client.providersCustomUpdate_unstable({ ...input, providerId });
   } catch (error) {
     normalizeCustomProviderApiError(error);
   }
@@ -90,10 +90,10 @@ export async function updateCustomProvider(
 
 export async function deleteCustomProvider(
   providerId: string,
-): Promise<CustomProviderDeleteResponse> {
+): Promise<CustomProviderDeleteResponse_unstable> {
   try {
     const client = await getProviderClient();
-    return client.GooseProvidersCustomDelete({ providerId });
+    return client.providersCustomDelete_unstable({ providerId });
   } catch (error) {
     normalizeCustomProviderApiError(error);
   }
